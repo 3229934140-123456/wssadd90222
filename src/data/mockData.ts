@@ -8,12 +8,14 @@ import type {
   StoreRanking,
   ConsultantEfficiency,
   TrendDataPoint,
+  TrendSummary,
   ProjectType,
   CustomerStatus,
   ConsultantStatus,
   AlertType,
   AlertSeverity,
-  TimeSlot
+  TimeSlot,
+  HandleAction
 } from '../types'
 import { generateId } from '../utils'
 
@@ -318,18 +320,119 @@ export function generateQueuingCustomers(storeId: string): QueuingCustomer[] {
 export function generateAlerts(storeId?: string): Alert[] {
   const alerts: Alert[] = []
   const stores = storeId ? STORES.filter((s) => s.id === storeId) : STORES
-  const alertTypes: AlertType[] = ['timeout_wait', 'long_occupation', 'frequent_reassign', 'arrived_not_consulted']
-  const severities: AlertSeverity[] = ['low', 'medium', 'high', 'critical']
 
-  let seed = 1000
+  let globalIdx = 0
   for (const store of stores) {
     const threshold = store.waitThresholdMin
-    const alertCount = store.status === 'critical' ? 5 : store.status === 'warning' ? 3 : 2
+    const lateThreshold = store.lateThresholdMin
+    const queuedCustomers = generateQueuingCustomers(store.id)
+    const timeoutWaitCustomers = queuedCustomers.filter((c) => c.status === 'timeout')
+    const arrivedNotConsultedCustomers = queuedCustomers.filter(
+      (c) => c.status === 'waiting' && c.waitMinutes >= lateThreshold
+    )
 
-    for (let i = 0; i < alertCount; i++) {
+    const baseAlertCount = store.status === 'critical' ? 5 : store.status === 'warning' ? 3 : 2
+    const timeoutWaitCount = Math.min(timeoutWaitCustomers.length, 8)
+    const arrivedNotConsultedCount = Math.min(arrivedNotConsultedCustomers.length, 8)
+    const otherAlertCount = Math.max(0, baseAlertCount - timeoutWaitCount - arrivedNotConsultedCount)
+
+    let seed = 1000
+    const storeConsultants = CONSULTANTS.filter((c) => c.storeId === store.id)
+
+    for (let i = 0; i < timeoutWaitCount; i++) {
+      globalIdx++
       seed++
-      const type = randomFrom(alertTypes, seed)
-      const isHandled = seededRandom(seed + 1) < 0.25
+      const customer = timeoutWaitCustomers[i]
+      const waitMinutes = customer.waitMinutes
+
+      let severity: AlertSeverity
+      if (waitMinutes >= threshold * 2) {
+        severity = 'critical'
+      } else if (waitMinutes >= threshold * 1.5) {
+        severity = 'high'
+      } else if (waitMinutes >= threshold) {
+        severity = 'medium'
+      } else {
+        severity = 'low'
+      }
+
+      const isHandled = seededRandom(seed + 1) < 0.15
+      const message = `顾客${customer.name}已等待${waitMinutes}分钟（门店标准${threshold}分钟），请尽快安排接诊`
+      const suggestion = '建议增派空闲咨询师，或主动联系顾客提供等候区饮品服务'
+
+      const triggeredHour = 9 + Math.floor(seededRandom(seed + 7) * 8)
+      const triggeredMin = Math.floor(seededRandom(seed + 8) * 60)
+      const triggeredDate = new Date()
+      triggeredDate.setHours(triggeredHour, triggeredMin, 0, 0)
+
+      alerts.push({
+        id: `alert-${store.id}-${globalIdx}`,
+        type: 'timeout_wait',
+        severity,
+        storeId: store.id,
+        storeName: store.name,
+        customerId: customer.id,
+        customerName: customer.name,
+        message,
+        triggeredAt: triggeredDate.toISOString(),
+        isHandled,
+        handledBy: isHandled ? '店长王经理' : undefined,
+        handledAt: isHandled ? new Date(triggeredDate.getTime() + 15 * 60 * 1000).toISOString() : undefined,
+        handleNote: isHandled ? '已协调安排，问题解决' : undefined,
+        handleAction: isHandled ? ('arrange_consultant' as HandleAction) : undefined,
+        suggestion
+      })
+    }
+
+    for (let i = 0; i < arrivedNotConsultedCount; i++) {
+      globalIdx++
+      seed++
+      const customer = arrivedNotConsultedCustomers[i]
+      const lateMin = customer.waitMinutes
+
+      let severity: AlertSeverity
+      if (lateMin >= lateThreshold + 20) {
+        severity = 'high'
+      } else if (lateMin >= lateThreshold + 10) {
+        severity = 'medium'
+      } else {
+        severity = 'low'
+      }
+
+      const isHandled = seededRandom(seed + 1) < 0.2
+      const message = `顾客${customer.name}已到店超过${lateMin}分钟未接诊，预约时间已过，请优先安排`
+      const suggestion = '建议立即安排空闲咨询师接诊，同时向顾客致歉说明情况'
+
+      const triggeredHour = 9 + Math.floor(seededRandom(seed + 7) * 8)
+      const triggeredMin = Math.floor(seededRandom(seed + 8) * 60)
+      const triggeredDate = new Date()
+      triggeredDate.setHours(triggeredHour, triggeredMin, 0, 0)
+
+      alerts.push({
+        id: `alert-${store.id}-${globalIdx}`,
+        type: 'arrived_not_consulted',
+        severity,
+        storeId: store.id,
+        storeName: store.name,
+        customerId: customer.id,
+        customerName: customer.name,
+        message,
+        triggeredAt: triggeredDate.toISOString(),
+        isHandled,
+        handledBy: isHandled ? '店长王经理' : undefined,
+        handledAt: isHandled ? new Date(triggeredDate.getTime() + 15 * 60 * 1000).toISOString() : undefined,
+        handleNote: isHandled ? '已协调安排，问题解决' : undefined,
+        handleAction: isHandled ? ('apologize_customer' as HandleAction) : undefined,
+        suggestion
+      })
+    }
+
+    const otherTypes: Array<'long_occupation' | 'frequent_reassign'> = ['long_occupation', 'frequent_reassign']
+    for (let i = 0; i < otherAlertCount; i++) {
+      globalIdx++
+      seed++
+      const type = randomFrom(otherTypes, seed)
+      const isHandled = seededRandom(seed + 1) < 0.3
 
       let severity: AlertSeverity
       let message: string
@@ -338,47 +441,23 @@ export function generateAlerts(storeId?: string): Alert[] {
       let alertConsultantName: string | undefined
       let alertCustomerId: string | undefined
       let alertCustomerName: string | undefined
-      const storeConsultants = CONSULTANTS.filter((c) => c.storeId === store.id)
       const consultant = randomFrom(storeConsultants, seed + 2)
-      const queuing = generateQueuingCustomers(store.id)
-      const customer = randomFrom(queuing, seed + 3)
+      const customer = randomFrom(queuedCustomers, seed + 3)
 
-      if (type === 'timeout_wait') {
-        const waitTime = Math.floor(threshold * 0.8) + Math.floor(seededRandom(seed + 4) * threshold * 2)
-        if (waitTime >= threshold * 2.25) {
-          severity = 'critical'
-        } else if (waitTime >= threshold * 1.75) {
-          severity = 'high'
-        } else if (waitTime >= threshold * 1.25) {
-          severity = 'medium'
-        } else {
-          severity = 'low'
-        }
-        message = `顾客${customer?.name || 'XXX'}等待已超过${waitTime}分钟，请尽快安排接诊`
-        suggestion = '建议增派空闲咨询师，或主动联系顾客提供等候区饮品服务'
-        alertCustomerId = customer?.id
-        alertCustomerName = customer?.name
-      } else if (type === 'long_occupation') {
+      if (type === 'long_occupation') {
         const occMinutes = 60 + Math.floor(seededRandom(seed + 5) * 60)
         severity = occMinutes >= 100 ? 'high' : occMinutes >= 80 ? 'medium' : 'low'
         message = `咨询师${consultant?.name || 'XXX'}接诊时间已达${occMinutes}分钟，超出平均时长`
         suggestion = '建议确认是否遇到复杂情况，必要时安排资深咨询师协助'
         alertConsultantId = consultant?.id
         alertConsultantName = consultant?.name
-      } else if (type === 'frequent_reassign') {
+      } else {
         const reassignCount = 2 + Math.floor(seededRandom(seed + 6) * 3)
         severity = reassignCount >= 4 ? 'high' : reassignCount >= 3 ? 'medium' : 'low'
         message = `顾客${customer?.name || 'XXX'}已被${reassignCount}次转派咨询师，顾客体验可能受影响`
         suggestion = '建议直接安排资深咨询师接诊，同时了解顾客需求避免再次转派'
         alertConsultantId = consultant?.id
         alertConsultantName = consultant?.name
-        alertCustomerId = customer?.id
-        alertCustomerName = customer?.name
-      } else {
-        const lateMin = store.lateThresholdMin + Math.floor(seededRandom(seed + 9) * 30)
-        severity = lateMin >= 45 ? 'high' : lateMin >= 35 ? 'medium' : 'low'
-        message = `顾客${customer?.name || 'XXX'}已到店超过${lateMin}分钟未接诊，预约时间已过，请优先安排`
-        suggestion = '建议立即安排空闲咨询师接诊，同时向顾客致歉说明情况'
         alertCustomerId = customer?.id
         alertCustomerName = customer?.name
       }
@@ -389,7 +468,7 @@ export function generateAlerts(storeId?: string): Alert[] {
       triggeredDate.setHours(triggeredHour, triggeredMin, 0, 0)
 
       alerts.push({
-        id: `alert-${store.id}-${i + 1}`,
+        id: `alert-${store.id}-${globalIdx}`,
         type,
         severity,
         storeId: store.id,
@@ -404,13 +483,14 @@ export function generateAlerts(storeId?: string): Alert[] {
         handledBy: isHandled ? '店长王经理' : undefined,
         handledAt: isHandled ? new Date(triggeredDate.getTime() + 15 * 60 * 1000).toISOString() : undefined,
         handleNote: isHandled ? '已协调安排，问题解决' : undefined,
+        handleAction: isHandled ? (type === 'long_occupation' ? 'adjust_schedule' as HandleAction : 'reassign' as HandleAction) : undefined,
         suggestion
       })
     }
   }
 
   return alerts.sort((a, b) => {
-    const severityOrder = { critical: 0, high: 1, medium: 2, low: 3 }
+    const severityOrder: Record<AlertSeverity, number> = { critical: 0, high: 1, medium: 2, low: 3 }
     if (a.isHandled !== b.isHandled) return a.isHandled ? 1 : -1
     return severityOrder[a.severity] - severityOrder[b.severity]
   })
@@ -504,8 +584,9 @@ export function generateCancelRecords(): CancelRecord[] {
   return records
 }
 
-export function generateStoreRanking(): StoreRanking[] {
-  const rankings: StoreRanking[] = STORES.map((store, idx) => {
+export function generateStoreRanking(storeIds?: string[]): StoreRanking[] {
+  const sourceStores = storeIds ? STORES.filter((s) => storeIds.includes(s.id)) : STORES
+  const rankings: StoreRanking[] = sourceStores.map((store, idx) => {
     const baseScore = 95 - idx * 4
     const totalConsultations = store.todayConsultations + Math.floor(seededRandom(idx + 10) * 20)
     const avgWaitMinutes = 15 + idx * 5 + Math.floor(seededRandom(idx + 20) * 10)
@@ -528,8 +609,11 @@ export function generateStoreRanking(): StoreRanking[] {
   return rankings
 }
 
-export function generateConsultantEfficiency(): ConsultantEfficiency[] {
-  const efficiencies: ConsultantEfficiency[] = CONSULTANTS.slice(0, 20).map((c, idx) => {
+export function generateConsultantEfficiency(storeIds?: string[]): ConsultantEfficiency[] {
+  const sourceConsultants = storeIds
+    ? CONSULTANTS.filter((c) => storeIds.includes(c.storeId))
+    : CONSULTANTS.slice(0, 20)
+  const efficiencies: ConsultantEfficiency[] = sourceConsultants.map((c, idx) => {
     const store = STORES.find((s) => s.id === c.storeId) || STORES[0]
     const baseScore = 95 - idx * 2.5
     const servedCount = c.todayServed + Math.floor(seededRandom(idx + 50) * 4)
@@ -583,4 +667,52 @@ export function generateTrendData(): TrendDataPoint[] {
   }
 
   return data
+}
+
+export function generateTrendSummary(days: 7 | 30, storeIds?: string[]): TrendSummary {
+  const byDay: { date: string; consultations: number; avgWait: number; cancels: number }[] = []
+  const today = new Date()
+  const storeMultiplier = storeIds ? Math.max(0.3, storeIds.length / STORES.length) : 1
+
+  for (let i = days - 1; i >= 0; i--) {
+    const date = new Date(today)
+    date.setDate(today.getDate() - i)
+    const dateStr = `${(date.getMonth() + 1).toString().padStart(2, '0')}/${date.getDate().toString().padStart(2, '0')}`
+    const dayOfWeek = date.getDay()
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6
+
+    const seedBase = days * 1000 + i * 31
+    const baseConsultations = isWeekend ? 35 : 65
+    const dayFluctuation = (seededRandom(seedBase + 1) - 0.5) * (days === 30 ? 40 : 20)
+    const consultations = Math.max(10, Math.floor((baseConsultations + dayFluctuation) * storeMultiplier))
+
+    const baseWait = isWeekend ? 22 : 30
+    const waitFluctuation = (seededRandom(seedBase + 2) - 0.5) * 15
+    const avgWait = Math.max(8, Math.floor(baseWait + waitFluctuation))
+
+    const baseCancels = Math.floor(consultations * (0.05 + seededRandom(seedBase + 3) * 0.05))
+    const cancels = Math.max(0, baseCancels)
+
+    byDay.push({ date: dateStr, consultations, avgWait, cancels })
+  }
+
+  const totalConsultations = byDay.reduce((sum, d) => sum + d.consultations, 0)
+  const totalCancels = byDay.reduce((sum, d) => sum + d.cancels, 0)
+  const avgWaitMinutes = Math.round(byDay.reduce((sum, d) => sum + d.avgWait, 0) / byDay.length)
+  const cancelRate = Number(((totalCancels / Math.max(1, totalConsultations)) * 100).toFixed(1))
+
+  return {
+    days,
+    totalConsultations,
+    avgWaitMinutes,
+    cancelCount: totalCancels,
+    cancelRate: Number(cancelRate),
+    peakHours: '10:00-12:00, 14:00-17:00',
+    compareToPrevPeriod: {
+      consultationsDeltaPct: Number(((seededRandom(days * 99) - 0.4) * 20).toFixed(1)),
+      waitDeltaPct: Number(((seededRandom(days * 97) - 0.6) * 15).toFixed(1)),
+      cancelRateDeltaPct: Number(((seededRandom(days * 95) - 0.5) * 10).toFixed(1))
+    },
+    byDay
+  }
 }

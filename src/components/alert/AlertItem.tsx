@@ -1,12 +1,22 @@
 import { Clock, AlertTriangle, Repeat, AlertCircle } from 'lucide-react';
-import { cn } from '../../utils';
-import type { Alert } from '../../types';
+import { cn, formatDateTime } from '../../utils';
+import type { Alert, HandleAction } from '../../types';
 
 interface AlertItemProps {
   alert: Alert;
   isSelected: boolean;
   onClick: () => void;
+  mode?: 'alert' | 'record';
 }
+
+const handleActionLabels: Record<HandleAction, string> = {
+  arrange_consultant: '立即安排空闲咨询师',
+  apologize_customer: '向顾客致歉并提供补偿',
+  open_room: '增开临时咨询室',
+  adjust_schedule: '调整后续预约间隔',
+  reassign: '改派其他咨询师',
+  other: '其他',
+};
 
 const severityConfig: Record<Alert['severity'], {
   bar: string;
@@ -83,9 +93,98 @@ function getRelativeTime(isoTime: string): string {
   return `${d}天前`;
 }
 
-export default function AlertItem({ alert, isSelected, onClick }: AlertItemProps) {
+export default function AlertItem({ alert, isSelected, onClick, mode = 'alert' }: AlertItemProps) {
   const severity = severityConfig[alert.severity];
   const TypeIcon = typeIcons[alert.type];
+  const isRecord = mode === 'record';
+
+  if (isRecord) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={cn(
+          'w-full text-left rounded-2xl overflow-hidden transition-all duration-300',
+          'border bg-gradient-card backdrop-blur-xl',
+          'group bg-status-success/[0.03]',
+          isSelected
+            ? cn(
+                'border-status-success/50 ring-1 ring-status-success/30',
+                'shadow-[0_0_0_1px_rgba(34,197,94,0.3),0_8px_30px_rgba(34,197,94,0.1)]',
+                'bg-status-success/[0.06]'
+              )
+            : cn(
+                'border-status-success/20',
+                'hover:border-status-success/40 hover:bg-status-success/[0.06] hover:-translate-y-0.5 hover:shadow-card-hover'
+              )
+        )}
+      >
+        <div className="flex">
+          <div className="w-1.5 flex-shrink-0 bg-status-success" />
+
+          <div className="flex-1 p-4 min-w-0">
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-status-success">
+                ✅ 已处理
+              </span>
+              <span className="text-xs text-white/45 flex-shrink-0 tabular-nums">
+                {alert.handledAt ? formatDateTime(alert.handledAt) : ''}
+              </span>
+            </div>
+
+            <div className="flex items-start gap-3">
+              <div
+                className={cn(
+                  'w-10 h-10 rounded-xl flex-shrink-0 flex items-center justify-center',
+                  severity.iconBg
+                )}
+              >
+                <TypeIcon className={cn('w-5 h-5', severity.iconColor)} />
+              </div>
+
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 min-w-0 mb-1.5">
+                  <h5 className="font-semibold text-white/95 truncate">
+                    {typeLabels[alert.type]}
+                  </h5>
+                  <span
+                    className={cn(
+                      'badge flex-shrink-0 border',
+                      severity.badgeBg,
+                      severity.badgeText
+                    )}
+                  >
+                    {severity.label}
+                  </span>
+                </div>
+
+                <p className="text-sm text-white/70 line-clamp-2 leading-relaxed">
+                  {alert.message}
+                </p>
+
+                <div className="mt-2.5 flex items-center gap-3 text-xs text-white/55 flex-wrap">
+                  <span className="inline-flex items-center gap-1">
+                    <span className="w-1 h-1 rounded-full bg-status-success/60" />
+                    处理人: <span className="text-white/75 font-medium">{alert.handledBy || '-'}</span>
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <span className="w-1 h-1 rounded-full bg-status-success/60" />
+                    动作: <span className="text-white/75 font-medium">{alert.handleAction ? handleActionLabels[alert.handleAction] : '-'}</span>
+                  </span>
+                </div>
+
+                {alert.handleNote && (
+                  <p className="mt-2 text-xs text-white/50 line-clamp-1">
+                    备注: {alert.handleNote.length > 20 ? alert.handleNote.slice(0, 20) + '...' : alert.handleNote}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </button>
+    );
+  }
 
   return (
     <button

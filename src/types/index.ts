@@ -78,6 +78,7 @@ export interface Alert {
   handledBy?: string;
   handledAt?: string;
   handleNote?: string;
+  handleAction?: HandleAction;
   suggestion: string;
 }
 
@@ -128,3 +129,20 @@ export interface TrendDataPoint {
   waiting: number;
   consultations: number;
 }
+
+export interface TrendSummary {
+  days: 7 | 30;
+  totalConsultations: number;
+  avgWaitMinutes: number;
+  cancelCount: number;
+  cancelRate: number;
+  peakHours: string;
+  compareToPrevPeriod: {
+    consultationsDeltaPct: number;
+    waitDeltaPct: number;
+    cancelRateDeltaPct: number;
+  };
+  byDay: { date: string; consultations: number; avgWait: number; cancels: number }[];
+}
+
+export type HandleAction = 'arrange_consultant' | 'apologize_customer' | 'adjust_schedule' | 'open_room' | 'reassign' | 'other';

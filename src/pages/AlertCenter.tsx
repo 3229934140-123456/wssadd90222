@@ -15,7 +15,7 @@ import KpiCard from '../components/common/KpiCard';
 import { generateAlerts } from '../data/mockData';
 import { useGlobalStore } from '../store';
 import { cn } from '../utils';
-import type { Alert, AlertType, AlertSeverity } from '../types';
+import type { Alert, AlertType, AlertSeverity, HandleAction } from '../types';
 
 const typeConfig: Record<AlertType, { label: string; icon: typeof Clock }> = {
   timeout_wait: { label: '等待超时', icon: Clock },
@@ -45,6 +45,7 @@ export default function AlertCenter() {
   const [searchQuery, setSearchQuery] = useState('');
   const [severityFilter, setSeverityFilter] = useState<'all' | AlertSeverity>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'unhandled' | 'handled'>('all');
+  const [viewMode, setViewMode] = useState<'alert' | 'record'>('alert');
   const [alerts, setAlerts] = useState<Alert[]>([]);
 
   useEffect(() => {
@@ -56,6 +57,7 @@ export default function AlertCenter() {
 
   const filteredAlerts = useMemo(() => {
     return alerts.filter((alert) => {
+      if (viewMode === 'record' && !alert.isHandled) return false;
       if (alertFilter !== 'all' && alert.type !== alertFilter) return false;
       if (severityFilter !== 'all' && alert.severity !== severityFilter) return false;
       if (statusFilter === 'unhandled' && alert.isHandled) return false;
@@ -73,7 +75,7 @@ export default function AlertCenter() {
       }
       return true;
     });
-  }, [alerts, alertFilter, severityFilter, statusFilter, searchQuery]);
+  }, [alerts, viewMode, alertFilter, severityFilter, statusFilter, searchQuery]);
 
   const selectedAlert = useMemo(() => {
     return alerts.find((a) => a.id === selectedAlertId) || null;
@@ -89,7 +91,7 @@ export default function AlertCenter() {
     };
   }, [alerts]);
 
-  const handleAlert = (note: string) => {
+  const handleAlert = (action: HandleAction, note: string) => {
     if (!selectedAlert) return;
     setAlerts((prev) =>
       prev.map((a) =>
@@ -100,6 +102,7 @@ export default function AlertCenter() {
               handledAt: new Date().toISOString(),
               handledBy: '张明',
               handleNote: note || '已处理',
+              handleAction: action,
             }
           : a
       )
@@ -212,6 +215,24 @@ export default function AlertCenter() {
                 </button>
               ))}
             </div>
+            <div className="flex rounded-lg border border-status-success/30 overflow-hidden ml-2">
+              {(['alert', 'record'] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setViewMode(m)}
+                  className={cn(
+                    'px-3 py-1.5 text-xs font-medium transition-all flex items-center gap-1.5',
+                    viewMode === m
+                      ? m === 'record'
+                        ? 'bg-status-success/20 text-status-success'
+                        : 'bg-primary-500/20 text-primary-300'
+                      : 'text-white/60 hover:text-white/80 hover:bg-white/5'
+                  )}
+                >
+                  {m === 'alert' ? '预警列表' : '处理记录'}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
@@ -262,7 +283,9 @@ export default function AlertCenter() {
         {filteredAlerts.length === 0 ? (
           <div className="col-span-full glass-card py-20 flex flex-col items-center justify-center text-white/35">
             <CheckCircle2 className="w-14 h-14 mb-4 opacity-50" />
-            <p className="text-base font-medium">暂无符合条件的预警</p>
+            <p className="text-base font-medium">
+              {viewMode === 'record' ? '暂无处理记录' : '暂无符合条件的预警'}
+            </p>
             <p className="text-sm mt-1 opacity-70">尝试调整筛选条件</p>
           </div>
         ) : (
@@ -270,6 +293,7 @@ export default function AlertCenter() {
             <AlertItem
               key={alert.id}
               alert={alert}
+              mode={viewMode}
               isSelected={selectedAlertId === alert.id}
               onClick={() =>
                 setSelectedAlertId(selectedAlertId === alert.id ? null : alert.id)

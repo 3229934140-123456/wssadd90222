@@ -18,11 +18,13 @@ import ReportPreview from '../components/export/ReportPreview';
 import KpiCard from '../components/common/KpiCard';
 import {
   STORES,
+  CONSULTANTS,
   generateStoreRanking,
   generateConsultantEfficiency,
+  generateTrendSummary,
 } from '../data/mockData';
 import { cn } from '../utils';
-import type { StoreRanking, ConsultantEfficiency } from '../types';
+import type { StoreRanking, ConsultantEfficiency, TrendSummary } from '../types';
 
 type ReportType = 'store' | 'consultant' | 'comprehensive';
 type ExportFormat = 'xlsx' | 'csv' | 'pdf';
@@ -62,18 +64,37 @@ export default function ExportReport() {
   const [exportSuccess, setExportSuccess] = useState(false);
   const [storeDropdownOpen, setStoreDropdownOpen] = useState(false);
 
-  const storeRanking = useMemo(() => generateStoreRanking(), []);
-  const consultantEfficiency = useMemo(() => generateConsultantEfficiency(), []);
+  const filteredStores = useMemo(() => {
+    if (config.stores.includes('all')) return STORES;
+    return STORES.filter((s) => config.stores.includes(s.id));
+  }, [config.stores]);
+
+  const filteredStoreIds = useMemo(() => {
+    if (config.stores.includes('all')) return undefined;
+    return filteredStores.map((s) => s.id);
+  }, [config.stores, filteredStores]);
+
+  const storeRanking = useMemo(() => generateStoreRanking(filteredStoreIds), [filteredStoreIds]);
+  const consultantEfficiency = useMemo(() => generateConsultantEfficiency(filteredStoreIds), [filteredStoreIds]);
+
+  const trend7 = useMemo<TrendSummary>(
+    () => generateTrendSummary(7, filteredStoreIds),
+    [filteredStoreIds]
+  );
+  const trend30 = useMemo<TrendSummary>(
+    () => generateTrendSummary(30, filteredStoreIds),
+    [filteredStoreIds]
+  );
+
+  const filteredStoreConsultants = useMemo(() => {
+    if (config.stores.includes('all')) return CONSULTANTS;
+    return CONSULTANTS.filter((c) => config.stores.includes(c.storeId));
+  }, [config.stores]);
 
   const previewData = useMemo(() => {
     if (config.reportType === 'consultant') return consultantEfficiency as any;
     return storeRanking as any;
   }, [config.reportType, storeRanking, consultantEfficiency]);
-
-  const filteredStores = useMemo(() => {
-    if (config.stores.includes('all')) return STORES;
-    return STORES.filter((s) => config.stores.includes(s.id));
-  }, [config.stores]);
 
   const toggleStore = (storeId: string) => {
     if (storeId === 'all') {
@@ -187,7 +208,7 @@ export default function ExportReport() {
         />
         <KpiCard
           title="咨询师总数"
-          value={consultantEfficiency.length}
+          value={filteredStoreConsultants.length}
           unit="人"
           icon={UserRound}
           gradientClass="bg-gradient-kpi2"
@@ -495,7 +516,14 @@ export default function ExportReport() {
                 </span>
               </div>
             </div>
-            <ReportPreview type={config.reportType} data={previewData} />
+            <ReportPreview
+              type={config.reportType}
+              data={previewData}
+              trend7={trend7}
+              trend30={trend30}
+              storeCount={filteredStores.length}
+              consultantCount={filteredStoreConsultants.length}
+            />
           </div>
         </div>
       </div>
