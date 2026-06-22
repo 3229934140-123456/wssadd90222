@@ -11,7 +11,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { useGlobalStore } from '../../store';
-import { cn } from '../../lib/utils';
+import { cn } from '../../utils';
 
 interface MenuItem {
   path: string;

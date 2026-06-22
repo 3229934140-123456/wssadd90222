@@ -7,19 +7,21 @@ import {
   Filter,
   Search,
   X,
+  AlertCircle,
 } from 'lucide-react';
 import AlertItem from '../components/alert/AlertItem';
 import AlertDetailPanel from '../components/alert/AlertDetailPanel';
 import KpiCard from '../components/common/KpiCard';
 import { generateAlerts } from '../data/mockData';
 import { useGlobalStore } from '../store';
-import { cn } from '../lib/utils';
+import { cn } from '../utils';
 import type { Alert, AlertType, AlertSeverity } from '../types';
 
 const typeConfig: Record<AlertType, { label: string; icon: typeof Clock }> = {
   timeout_wait: { label: '等待超时', icon: Clock },
   long_occupation: { label: '占用过长', icon: AlertTriangle },
   frequent_reassign: { label: '频繁改派', icon: Repeat },
+  arrived_not_consulted: { label: '到店未接诊', icon: AlertCircle },
 };
 
 const severityConfig: Record<AlertSeverity, { label: string; cls: string }> = {
@@ -83,6 +85,7 @@ export default function AlertCenter() {
       unhandled: alerts.filter((a) => !a.isHandled).length,
       critical: alerts.filter((a) => a.severity === 'critical' && !a.isHandled).length,
       timeout: alerts.filter((a) => a.type === 'timeout_wait' && !a.isHandled).length,
+      arrived: alerts.filter((a) => a.type === 'arrived_not_consulted' && !a.isHandled).length,
     };
   }, [alerts]);
 
@@ -115,7 +118,7 @@ export default function AlertCenter() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <KpiCard
           title="预警总数"
           value={stats.total}
@@ -152,6 +155,15 @@ export default function AlertCenter() {
           colorClass="text-project-hyaluronic"
           delay={180}
         />
+        <KpiCard
+          title="到店未接诊"
+          value={stats.arrived}
+          unit="条"
+          icon={AlertCircle}
+          gradientClass="bg-gradient-kpi1"
+          colorClass="text-rosegold-400"
+          delay={240}
+        />
       </div>
 
       <div className="glass-card p-5">
@@ -159,7 +171,7 @@ export default function AlertCenter() {
           <div className="flex flex-wrap items-center gap-2">
             <Filter className="w-4 h-4 text-white/40" />
             <div className="flex rounded-lg border border-white/10 overflow-hidden">
-              {(['all', 'timeout_wait', 'long_occupation', 'frequent_reassign'] as const).map(
+              {(['all', 'timeout_wait', 'long_occupation', 'frequent_reassign', 'arrived_not_consulted'] as const).map(
                 (f) => {
                   const Icon = typeConfig[f]?.icon || Filter;
                   return (

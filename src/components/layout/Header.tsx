@@ -13,8 +13,8 @@ import {
   Check,
 } from 'lucide-react';
 import { useGlobalStore } from '../../store';
-import { STORES } from '../../data/stores';
-import { cn } from '../../lib/utils';
+import { STORES } from '../../data/mockData';
+import { cn } from '../../utils';
 
 const ROUTE_TITLES: Record<string, string> = {
   '/overview': '门店总览',

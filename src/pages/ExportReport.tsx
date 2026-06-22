@@ -17,11 +17,11 @@ import {
 import ReportPreview from '../components/export/ReportPreview';
 import KpiCard from '../components/common/KpiCard';
 import {
+  STORES,
   generateStoreRanking,
   generateConsultantEfficiency,
 } from '../data/mockData';
-import { STORES } from '../data/stores';
-import { cn } from '../lib/utils';
+import { cn } from '../utils';
 import type { StoreRanking, ConsultantEfficiency } from '../types';
 
 type ReportType = 'store' | 'consultant' | 'comprehensive';

@@ -4,7 +4,7 @@ export type CustomerStatus = 'waiting' | 'calling' | 'consulting' | 'timeout';
 
 export type ConsultantStatus = 'free' | 'busy' | 'break';
 
-export type AlertType = 'timeout_wait' | 'long_occupation' | 'frequent_reassign';
+export type AlertType = 'timeout_wait' | 'long_occupation' | 'frequent_reassign' | 'arrived_not_consulted';
 
 export type AlertSeverity = 'low' | 'medium' | 'high' | 'critical';
 
@@ -29,6 +29,8 @@ export interface Store {
   totalConsultants: number;
   todayConsultations: number;
   status: 'normal' | 'warning' | 'critical';
+  waitThresholdMin: number;
+  lateThresholdMin: number;
 }
 
 export interface QueuingCustomer {
@@ -43,6 +45,7 @@ export interface QueuingCustomer {
   waitMinutes: number;
   status: CustomerStatus;
   assignedConsultantId?: string;
+  minutesLateAfterAppt?: number;
 }
 
 export interface Consultant {

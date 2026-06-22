@@ -11,13 +11,13 @@ import {
 import KpiCard from '../components/common/KpiCard';
 import LineChartCard from '../components/charts/LineChartCard';
 import BarChartCard from '../components/charts/BarChartCard';
-import { STORES } from '../data/stores';
 import {
+  STORES,
   generateTrendData,
   generateStoreRanking,
 } from '../data/mockData';
 import { useGlobalStore } from '../store';
-import { cn } from '../lib/utils';
+import { cn } from '../utils';
 
 export default function Overview() {
   const { currentStoreId } = useGlobalStore();

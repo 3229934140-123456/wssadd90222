@@ -2,7 +2,7 @@ import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Header from './Header';
 import { useGlobalStore } from '../../store';
-import { cn } from '../../lib/utils';
+import { cn } from '../../utils';
 
 export default function AppLayout() {
   const { sidebarCollapsed } = useGlobalStore();

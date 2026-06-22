@@ -6,7 +6,7 @@ import Timeline from '../components/consultant/Timeline';
 import HeatmapGrid from '../components/charts/HeatmapGrid';
 import { STORES, CONSULTANTS } from '../data/mockData';
 import { useGlobalStore } from '../store';
-import { cn } from '../lib/utils';
+import { cn } from '../utils';
 import type { Consultant, ConsultantStatus, TimeSlot } from '../types';
 
 interface HeatmapData {
@@ -85,44 +85,44 @@ export default function ConsultantPage() {
     [currentStoreId]
   );
 
-  const storeConsultants = useMemo(() => {
+  const filteredConsultants = useMemo(() => {
     const filtered = CONSULTANTS.filter((c) => c.storeId === currentStoreId);
     return filtered.length > 0 ? filtered : CONSULTANTS;
   }, [currentStoreId, refreshTick]);
 
   const kpis = useMemo(() => {
-    const onDuty = storeConsultants.length;
-    const busy = storeConsultants.filter((c) => c.status === 'busy').length;
-    const free = storeConsultants.filter((c) => c.status === 'free').length;
-    const onBreak = storeConsultants.filter((c) => c.status === 'break').length;
-    const totalServed = storeConsultants.reduce((s, c) => s + c.todayServed, 0);
+    const onDuty = filteredConsultants.length;
+    const busy = filteredConsultants.filter((c) => c.status === 'busy').length;
+    const free = filteredConsultants.filter((c) => c.status === 'free').length;
+    const onBreak = filteredConsultants.filter((c) => c.status === 'break').length;
+    const totalServed = filteredConsultants.reduce((s, c) => s + c.todayServed, 0);
     const avgServed = onDuty > 0 ? Number((totalServed / onDuty).toFixed(1)) : 0;
     return { onDuty, busy, free, onBreak, avgServed };
-  }, [storeConsultants]);
+  }, [filteredConsultants]);
 
-  const filteredConsultants = useMemo(() => {
-    if (activeTab === 'all') return storeConsultants;
-    return storeConsultants.filter((c) => c.status === activeTab);
-  }, [storeConsultants, activeTab]);
+  const statusFilteredConsultants = useMemo(() => {
+    if (activeTab === 'all') return filteredConsultants;
+    return filteredConsultants.filter((c) => c.status === activeTab);
+  }, [filteredConsultants, activeTab]);
 
   const tabCounts = useMemo(() => ({
-    all: storeConsultants.length,
+    all: filteredConsultants.length,
     busy: kpis.busy,
     free: kpis.free,
     break: kpis.onBreak,
-  }), [storeConsultants, kpis]);
+  }), [filteredConsultants, kpis]);
 
   const timelineData = useMemo(() => {
-    return storeConsultants.slice(0, 8).map((c) => ({
+    return filteredConsultants.slice(0, 8).map((c) => ({
       id: c.id,
       name: c.name,
       schedule: c.todaySchedule,
     }));
-  }, [storeConsultants]);
+  }, [filteredConsultants]);
 
   const heatmapData = useMemo(
-    () => generateHeatmapData(storeConsultants),
-    [storeConsultants]
+    () => generateHeatmapData(filteredConsultants),
+    [filteredConsultants]
   );
 
   return (
@@ -238,7 +238,7 @@ export default function ConsultantPage() {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-          {filteredConsultants.map((consultant, idx) => (
+          {statusFilteredConsultants.map((consultant, idx) => (
             <div
               key={consultant.id}
               className={cn(
@@ -253,7 +253,7 @@ export default function ConsultantPage() {
               <ConsultantCard consultant={consultant} />
             </div>
           ))}
-          {filteredConsultants.length === 0 && (
+          {statusFilteredConsultants.length === 0 && (
             <div className="col-span-full py-16 flex flex-col items-center justify-center text-white/40">
               <Coffee className="w-12 h-12 mb-3 opacity-60" />
               <p className="text-sm font-medium">暂无符合条件的咨询师</p>

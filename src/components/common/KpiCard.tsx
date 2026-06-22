@@ -1,6 +1,6 @@
 import type { ComponentType } from 'react';
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
-import { cn } from '../../lib/utils';
+import { cn } from '../../utils';
 
 interface KpiCardProps {
   title: string;

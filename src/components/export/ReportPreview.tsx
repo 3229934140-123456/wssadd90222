@@ -11,7 +11,7 @@ import {
   ThumbsUp,
   ListOrdered,
 } from 'lucide-react';
-import { cn } from '../../lib/utils';
+import { cn } from '../../utils';
 import type { StoreRanking, ConsultantEfficiency } from '../../types';
 
 interface ReportPreviewProps {

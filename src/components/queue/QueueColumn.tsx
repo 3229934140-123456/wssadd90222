@@ -1,5 +1,5 @@
 import { ChevronRight, UserMinus, UserPlus, Users } from 'lucide-react';
-import { cn } from '../../lib/utils';
+import { cn } from '../../utils';
 import type { ProjectType, QueuingCustomer } from '../../types';
 import CustomerCard from './CustomerCard';
 

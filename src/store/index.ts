@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type AlertFilterType = 'all' | 'timeout_wait' | 'long_occupation' | 'frequent_reassign';
+export type AlertFilterType = 'all' | 'timeout_wait' | 'long_occupation' | 'frequent_reassign' | 'arrived_not_consulted';
 
 export interface GlobalState {
   currentStoreId: string;
@@ -16,7 +16,7 @@ export interface GlobalState {
 }
 
 export const useGlobalStore = create<GlobalState>((set) => ({
-  currentStoreId: 'store-sh-01',
+  currentStoreId: 'store-sh-001',
   setCurrentStoreId: (id: string) => set({ currentStoreId: id }),
   sidebarCollapsed: false,
   toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),

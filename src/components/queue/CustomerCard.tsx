@@ -1,5 +1,5 @@
 import { UserRound, Clock, ArrowRightLeft, PhoneCall, UserCheck } from 'lucide-react';
-import { cn } from '../../lib/utils';
+import { cn } from '../../utils';
 import type { QueuingCustomer } from '../../types';
 
 interface CustomerCardProps {

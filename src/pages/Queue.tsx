@@ -3,7 +3,7 @@ import { Store as StoreIcon, RefreshCw, History, UserRound, Clock } from 'lucide
 import QueueColumn from '../components/queue/QueueColumn';
 import { STORES, generateQueuingCustomers, CONSULTANTS } from '../data/mockData';
 import { useGlobalStore } from '../store';
-import { cn } from '../lib/utils';
+import { cn } from '../utils';
 import { formatTime, getProjectTypeName } from '../utils';
 import type { ProjectType, QueuingCustomer } from '../types';
 
@@ -25,9 +25,9 @@ const projectTypeDotColors: Record<ProjectType, string> = {
   surgery: 'bg-project-surgery',
 };
 
-function generateCallHistory(customers: QueuingCustomer[], count: number): CallHistoryRecord[] {
-  const records: CallHistoryRecord[] = [];
-  const consultants = CONSULTANTS;
+function generateCallHistory(customers: QueuingCustomer[], count: number, storeId: string): CallHistoryRecord[] {
+  const records: CallHistoryRecord[] = []
+  const consultants = CONSULTANTS.filter((c) => c.storeId === storeId);
   const now = new Date();
   for (let i = 0; i < count; i++) {
     const customer = customers[i % Math.max(customers.length, 1)];
@@ -83,8 +83,8 @@ export default function Queue() {
   }, [customers]);
 
   const callHistory = useMemo(
-    () => generateCallHistory(customers, 5),
-    [customers]
+    () => generateCallHistory(customers, 5, currentStoreId),
+    [customers, currentStoreId]
   );
 
   useEffect(() => {

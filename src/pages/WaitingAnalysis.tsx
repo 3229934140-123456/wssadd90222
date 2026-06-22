@@ -11,9 +11,9 @@ import {
 import KpiCard from '../components/common/KpiCard';
 import LineChartCard from '../components/charts/LineChartCard';
 import BarChartCard from '../components/charts/BarChartCard';
-import { generateWaitingAnalysis, generateCancelRecords } from '../data/mockData';
+import { generateWaitingAnalysis, generateCancelRecords, STORES } from '../data/mockData';
 import { useGlobalStore } from '../store';
-import { cn } from '../lib/utils';
+import { cn } from '../utils';
 import type { ProjectType, CancelRecord } from '../types';
 
 const projectTypeLabels: Record<ProjectType, string> = {
@@ -34,6 +34,11 @@ export default function WaitingAnalysis() {
   const { currentStoreId } = useGlobalStore();
   const [cancelFilter, setCancelFilter] = useState<'all' | 'new' | 'old'>('all');
   const [projectFilter, setProjectFilter] = useState<'all' | ProjectType>('all');
+
+  const currentStore = useMemo(
+    () => STORES.find((s) => s.id === currentStoreId) ?? STORES[0],
+    [currentStoreId]
+  );
 
   const analysisData = useMemo(() => generateWaitingAnalysis(), []);
   const cancelRecords = useMemo(() => generateCancelRecords(), []);
@@ -113,6 +118,15 @@ export default function WaitingAnalysis() {
         <p className="mt-1 text-sm text-white/50">
           多维度分析顾客等待时间、客流分布和取消原因，帮助优化运营效率
         </p>
+        <div className="mt-2 flex items-center gap-2 text-xs">
+          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-primary-500/15 text-primary-300 border border-primary-500/25">
+            <span className="w-1.5 h-1.5 rounded-full bg-primary-400" />
+            当前门店：{currentStore.name}
+          </span>
+          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-white/5 text-white/50 border border-white/10">
+            目前展示全品牌平均数据
+          </span>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">

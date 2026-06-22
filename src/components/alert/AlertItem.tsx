@@ -1,5 +1,5 @@
-import { Clock, AlertTriangle, Repeat } from 'lucide-react';
-import { cn } from '../../lib/utils';
+import { Clock, AlertTriangle, Repeat, AlertCircle } from 'lucide-react';
+import { cn } from '../../utils';
 import type { Alert } from '../../types';
 
 interface AlertItemProps {
@@ -59,12 +59,14 @@ const typeIcons: Record<Alert['type'], typeof Clock> = {
   timeout_wait: Clock,
   long_occupation: AlertTriangle,
   frequent_reassign: Repeat,
+  arrived_not_consulted: AlertCircle,
 };
 
 const typeLabels: Record<Alert['type'], string> = {
   timeout_wait: '等待超时',
   long_occupation: '占用过长',
   frequent_reassign: '频繁改派',
+  arrived_not_consulted: '到店未接诊',
 };
 
 function getRelativeTime(isoTime: string): string {

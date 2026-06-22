@@ -13,7 +13,7 @@ import {
   MessageSquareText,
   UserCheck,
 } from 'lucide-react';
-import { cn } from '../../lib/utils';
+import { cn } from '../../utils';
 import type { Alert } from '../../types';
 
 interface AlertDetailPanelProps {
@@ -68,6 +68,7 @@ const typeLabels: Record<Alert['type'], string> = {
   timeout_wait: '等待超时',
   long_occupation: '占用过长',
   frequent_reassign: '频繁改派',
+  arrived_not_consulted: '到店未接诊',
 };
 
 function formatDateTime(isoTime: string): string {

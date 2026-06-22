@@ -29,7 +29,9 @@ export const STORES: Store[] = [
     freeConsultants: 2,
     totalConsultants: 8,
     todayConsultations: 86,
-    status: 'warning'
+    status: 'warning',
+    waitThresholdMin: 40,
+    lateThresholdMin: 25
   },
   {
     id: 'store-bj-002',
@@ -42,7 +44,9 @@ export const STORES: Store[] = [
     freeConsultants: 1,
     totalConsultants: 8,
     todayConsultations: 92,
-    status: 'critical'
+    status: 'critical',
+    waitThresholdMin: 50,
+    lateThresholdMin: 15
   },
   {
     id: 'store-gz-003',
@@ -55,7 +59,9 @@ export const STORES: Store[] = [
     freeConsultants: 3,
     totalConsultants: 7,
     todayConsultations: 68,
-    status: 'normal'
+    status: 'normal',
+    waitThresholdMin: 35,
+    lateThresholdMin: 20
   },
   {
     id: 'store-sz-004',
@@ -68,7 +74,9 @@ export const STORES: Store[] = [
     freeConsultants: 2,
     totalConsultants: 7,
     todayConsultations: 74,
-    status: 'normal'
+    status: 'normal',
+    waitThresholdMin: 35,
+    lateThresholdMin: 20
   },
   {
     id: 'store-hz-005',
@@ -81,7 +89,9 @@ export const STORES: Store[] = [
     freeConsultants: 4,
     totalConsultants: 6,
     todayConsultations: 52,
-    status: 'normal'
+    status: 'normal',
+    waitThresholdMin: 30,
+    lateThresholdMin: 20
   },
   {
     id: 'store-cd-006',
@@ -94,7 +104,9 @@ export const STORES: Store[] = [
     freeConsultants: 1,
     totalConsultants: 7,
     todayConsultations: 81,
-    status: 'critical'
+    status: 'critical',
+    waitThresholdMin: 40,
+    lateThresholdMin: 25
   },
   {
     id: 'store-nj-007',
@@ -107,7 +119,9 @@ export const STORES: Store[] = [
     freeConsultants: 3,
     totalConsultants: 6,
     todayConsultations: 58,
-    status: 'normal'
+    status: 'normal',
+    waitThresholdMin: 35,
+    lateThresholdMin: 15
   },
   {
     id: 'store-wh-008',
@@ -120,7 +134,9 @@ export const STORES: Store[] = [
     freeConsultants: 2,
     totalConsultants: 7,
     todayConsultations: 65,
-    status: 'warning'
+    status: 'warning',
+    waitThresholdMin: 40,
+    lateThresholdMin: 15
   }
 ]
 
@@ -224,6 +240,8 @@ function seededRandom(seed: number): number {
 export function generateQueuingCustomers(storeId: string): QueuingCustomer[] {
   const customers: QueuingCustomer[] = []
   const store = STORES.find((s) => s.id === storeId) || STORES[0]
+  const threshold = store.waitThresholdMin
+  const warningThreshold = Math.floor(threshold * 0.7)
   const count = 15 + Math.floor(seededRandom(store.todayConsultations) * 10)
   const projectTypes: ProjectType[] = ['hyaluronic', 'photoelectric', 'skincare', 'surgery']
 
@@ -234,15 +252,26 @@ export function generateQueuingCustomers(storeId: string): QueuingCustomer[] {
     const projectType = randomFrom(projectTypes, seed)
     const projects = projectInfo[projectType]
     const projectName = randomFrom(projects, seed + 3)
-    const waitMinutes = isNew
-      ? Math.floor(15 + rand * 85)
-      : Math.floor(8 + rand * 55)
+
+    const isArrivedNotConsulted = seededRandom(seed + 99) < (isNew ? 0.3 : 0.2)
+
+    let waitMinutes: number
+    if (isArrivedNotConsulted) {
+      const lateRange = threshold - store.lateThresholdMin
+      waitMinutes = store.lateThresholdMin + Math.floor(seededRandom(seed + 88) * lateRange)
+    } else {
+      waitMinutes = isNew
+        ? Math.floor(15 + rand * 85)
+        : Math.floor(8 + rand * 55)
+    }
 
     let status: CustomerStatus
-    if (waitMinutes >= 60) {
+    if (waitMinutes >= threshold) {
       status = 'timeout'
-    } else if (waitMinutes >= 45) {
+    } else if (waitMinutes >= warningThreshold) {
       status = i % 5 === 0 ? 'calling' : 'waiting'
+    } else if (isArrivedNotConsulted) {
+      status = 'waiting'
     } else if (i < 3) {
       status = 'consulting'
     } else if (i % 7 === 0) {
@@ -278,7 +307,8 @@ export function generateQueuingCustomers(storeId: string): QueuingCustomer[] {
       status,
       assignedConsultantId: status === 'consulting' || status === 'calling'
         ? CONSULTANTS.filter((c) => c.storeId === storeId)[i % Math.max(1, CONSULTANTS.filter((c) => c.storeId === storeId).length)]?.id
-        : undefined
+        : undefined,
+      minutesLateAfterAppt: isArrivedNotConsulted ? waitMinutes : undefined
     })
   }
 
@@ -288,11 +318,12 @@ export function generateQueuingCustomers(storeId: string): QueuingCustomer[] {
 export function generateAlerts(storeId?: string): Alert[] {
   const alerts: Alert[] = []
   const stores = storeId ? STORES.filter((s) => s.id === storeId) : STORES
-  const alertTypes: AlertType[] = ['timeout_wait', 'long_occupation', 'frequent_reassign']
+  const alertTypes: AlertType[] = ['timeout_wait', 'long_occupation', 'frequent_reassign', 'arrived_not_consulted']
   const severities: AlertSeverity[] = ['low', 'medium', 'high', 'critical']
 
   let seed = 1000
   for (const store of stores) {
+    const threshold = store.waitThresholdMin
     const alertCount = store.status === 'critical' ? 5 : store.status === 'warning' ? 3 : 2
 
     for (let i = 0; i < alertCount; i++) {
@@ -303,26 +334,53 @@ export function generateAlerts(storeId?: string): Alert[] {
       let severity: AlertSeverity
       let message: string
       let suggestion: string
+      let alertConsultantId: string | undefined
+      let alertConsultantName: string | undefined
+      let alertCustomerId: string | undefined
+      let alertCustomerName: string | undefined
       const storeConsultants = CONSULTANTS.filter((c) => c.storeId === store.id)
       const consultant = randomFrom(storeConsultants, seed + 2)
       const queuing = generateQueuingCustomers(store.id)
       const customer = randomFrom(queuing, seed + 3)
 
       if (type === 'timeout_wait') {
-        const waitTime = 45 + Math.floor(seededRandom(seed + 4) * 75)
-        severity = waitTime >= 90 ? 'critical' : waitTime >= 70 ? 'high' : waitTime >= 55 ? 'medium' : 'low'
+        const waitTime = Math.floor(threshold * 0.8) + Math.floor(seededRandom(seed + 4) * threshold * 2)
+        if (waitTime >= threshold * 2.25) {
+          severity = 'critical'
+        } else if (waitTime >= threshold * 1.75) {
+          severity = 'high'
+        } else if (waitTime >= threshold * 1.25) {
+          severity = 'medium'
+        } else {
+          severity = 'low'
+        }
         message = `顾客${customer?.name || 'XXX'}等待已超过${waitTime}分钟，请尽快安排接诊`
         suggestion = '建议增派空闲咨询师，或主动联系顾客提供等候区饮品服务'
+        alertCustomerId = customer?.id
+        alertCustomerName = customer?.name
       } else if (type === 'long_occupation') {
         const occMinutes = 60 + Math.floor(seededRandom(seed + 5) * 60)
         severity = occMinutes >= 100 ? 'high' : occMinutes >= 80 ? 'medium' : 'low'
         message = `咨询师${consultant?.name || 'XXX'}接诊时间已达${occMinutes}分钟，超出平均时长`
         suggestion = '建议确认是否遇到复杂情况，必要时安排资深咨询师协助'
-      } else {
+        alertConsultantId = consultant?.id
+        alertConsultantName = consultant?.name
+      } else if (type === 'frequent_reassign') {
         const reassignCount = 2 + Math.floor(seededRandom(seed + 6) * 3)
         severity = reassignCount >= 4 ? 'high' : reassignCount >= 3 ? 'medium' : 'low'
         message = `顾客${customer?.name || 'XXX'}已被${reassignCount}次转派咨询师，顾客体验可能受影响`
         suggestion = '建议直接安排资深咨询师接诊，同时了解顾客需求避免再次转派'
+        alertConsultantId = consultant?.id
+        alertConsultantName = consultant?.name
+        alertCustomerId = customer?.id
+        alertCustomerName = customer?.name
+      } else {
+        const lateMin = store.lateThresholdMin + Math.floor(seededRandom(seed + 9) * 30)
+        severity = lateMin >= 45 ? 'high' : lateMin >= 35 ? 'medium' : 'low'
+        message = `顾客${customer?.name || 'XXX'}已到店超过${lateMin}分钟未接诊，预约时间已过，请优先安排`
+        suggestion = '建议立即安排空闲咨询师接诊，同时向顾客致歉说明情况'
+        alertCustomerId = customer?.id
+        alertCustomerName = customer?.name
       }
 
       const triggeredHour = 9 + Math.floor(seededRandom(seed + 7) * 8)
@@ -336,10 +394,10 @@ export function generateAlerts(storeId?: string): Alert[] {
         severity,
         storeId: store.id,
         storeName: store.name,
-        consultantId: type !== 'timeout_wait' ? consultant?.id : undefined,
-        consultantName: type !== 'timeout_wait' ? consultant?.name : undefined,
-        customerId: type !== 'long_occupation' ? customer?.id : undefined,
-        customerName: type !== 'long_occupation' ? customer?.name : undefined,
+        consultantId: alertConsultantId,
+        consultantName: alertConsultantName,
+        customerId: alertCustomerId,
+        customerName: alertCustomerName,
         message,
         triggeredAt: triggeredDate.toISOString(),
         isHandled,
