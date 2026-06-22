@@ -8,6 +8,7 @@ import {
   Search,
   X,
   AlertCircle,
+  CalendarDays,
 } from 'lucide-react';
 import AlertItem from '../components/alert/AlertItem';
 import AlertDetailPanel from '../components/alert/AlertDetailPanel';
@@ -16,6 +17,7 @@ import { generateAlerts } from '../data/mockData';
 import { useGlobalStore } from '../store';
 import { cn } from '../utils';
 import type { Alert, AlertType, AlertSeverity, HandleAction } from '../types';
+import type { PersistedHandledAlert } from '../utils/storage';
 
 const typeConfig: Record<AlertType, { label: string; icon: typeof Clock }> = {
   timeout_wait: { label: '等待超时', icon: Clock },
@@ -31,6 +33,35 @@ const severityConfig: Record<AlertSeverity, { label: string; cls: string }> = {
   low: { label: '低', cls: 'bg-white/5 text-white/60 border-white/15' },
 };
 
+const handleActionLabels: Record<HandleAction, string> = {
+  arrange_consultant: '安排空闲咨询师',
+  apologize_customer: '向顾客致歉补偿',
+  open_room: '增开临时咨询室',
+  adjust_schedule: '调整预约间隔',
+  reassign: '改派其他咨询师',
+  other: '其他',
+};
+
+function persistedToAlert(p: PersistedHandledAlert): Alert {
+  return {
+    id: p.id,
+    type: p.alertType,
+    severity: p.severity,
+    storeId: p.storeId,
+    storeName: p.storeName,
+    customerName: p.customerName,
+    consultantName: p.consultantName,
+    message: p.message,
+    triggeredAt: p.triggeredAt,
+    isHandled: true,
+    handledBy: p.handledBy,
+    handledAt: p.handledAt,
+    handleNote: p.handleNote,
+    handleAction: p.handleAction,
+    suggestion: p.suggestion,
+  };
+}
+
 export default function AlertCenter() {
   const {
     currentStoreId,
@@ -40,13 +71,19 @@ export default function AlertCenter() {
     setAlertFilter,
     unhandledAlertsCount,
     setUnhandledAlertsCount,
+    handledAlerts,
   } = useGlobalStore();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [severityFilter, setSeverityFilter] = useState<'all' | AlertSeverity>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'unhandled' | 'handled'>('all');
   const [viewMode, setViewMode] = useState<'alert' | 'record'>('alert');
+  const [priorityOnly, setPriorityOnly] = useState(false);
   const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [handledByFilter, setHandledByFilter] = useState<string>('all');
+  const [handleActionFilter, setHandleActionFilter] = useState<'all' | HandleAction>('all');
+  const [dateStart, setDateStart] = useState<string>('');
+  const [dateEnd, setDateEnd] = useState<string>('');
 
   useEffect(() => {
     const generated = generateAlerts(currentStoreId);
@@ -55,13 +92,44 @@ export default function AlertCenter() {
     setUnhandledAlertsCount(count);
   }, [currentStoreId, setUnhandledAlertsCount]);
 
+  const handledByOptions = useMemo(() => {
+    const set = new Set<string>();
+    handledAlerts.forEach((a) => a.handledBy && set.add(a.handledBy));
+    return Array.from(set);
+  }, [handledAlerts]);
+
+  const sourceList = useMemo<Alert[]>(() => {
+    if (viewMode === 'record') {
+      return handledAlerts.map(persistedToAlert);
+    }
+    return alerts;
+  }, [viewMode, handledAlerts, alerts]);
+
   const filteredAlerts = useMemo(() => {
-    return alerts.filter((alert) => {
-      if (viewMode === 'record' && !alert.isHandled) return false;
+    return sourceList.filter((alert) => {
+      if (viewMode !== 'record') {
+        if (statusFilter === 'unhandled' && alert.isHandled) return false;
+        if (statusFilter === 'handled' && !alert.isHandled) return false;
+      }
+      if (priorityOnly && !alert.isPriorityFollowUp) return false;
       if (alertFilter !== 'all' && alert.type !== alertFilter) return false;
       if (severityFilter !== 'all' && alert.severity !== severityFilter) return false;
-      if (statusFilter === 'unhandled' && alert.isHandled) return false;
-      if (statusFilter === 'handled' && !alert.isHandled) return false;
+
+      if (viewMode === 'record') {
+        if (handledByFilter !== 'all' && alert.handledBy !== handledByFilter) return false;
+        if (handleActionFilter !== 'all' && alert.handleAction !== handleActionFilter) return false;
+        if (dateStart && alert.handledAt) {
+          const start = new Date(dateStart + 'T00:00:00').getTime();
+          const h = new Date(alert.handledAt).getTime();
+          if (h < start) return false;
+        }
+        if (dateEnd && alert.handledAt) {
+          const end = new Date(dateEnd + 'T23:59:59').getTime();
+          const h = new Date(alert.handledAt).getTime();
+          if (h > end) return false;
+        }
+      }
+
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
         if (
@@ -75,21 +143,32 @@ export default function AlertCenter() {
       }
       return true;
     });
-  }, [alerts, viewMode, alertFilter, severityFilter, statusFilter, searchQuery]);
+  }, [sourceList, viewMode, alertFilter, severityFilter, statusFilter, searchQuery, handledByFilter, handleActionFilter, dateStart, dateEnd, priorityOnly]);
 
   const selectedAlert = useMemo(() => {
-    return alerts.find((a) => a.id === selectedAlertId) || null;
-  }, [alerts, selectedAlertId]);
+    return sourceList.find((a) => a.id === selectedAlertId) || null;
+  }, [sourceList, selectedAlertId]);
 
   const stats = useMemo(() => {
+    if (viewMode === 'record') {
+      return {
+        total: handledAlerts.length,
+        unhandled: 0,
+        critical: handledAlerts.filter((a) => a.severity === 'critical').length,
+        timeout: handledAlerts.filter((a) => a.alertType === 'timeout_wait').length,
+        arrived: handledAlerts.filter((a) => a.alertType === 'arrived_not_consulted').length,
+        priorityFollowUp: 0,
+      };
+    }
     return {
       total: alerts.length,
       unhandled: alerts.filter((a) => !a.isHandled).length,
       critical: alerts.filter((a) => a.severity === 'critical' && !a.isHandled).length,
       timeout: alerts.filter((a) => a.type === 'timeout_wait' && !a.isHandled).length,
       arrived: alerts.filter((a) => a.type === 'arrived_not_consulted' && !a.isHandled).length,
+      priorityFollowUp: alerts.filter((a) => a.isPriorityFollowUp && !a.isHandled).length,
     };
-  }, [alerts]);
+  }, [viewMode, alerts, handledAlerts]);
 
   const handleAlert = (action: HandleAction, note: string) => {
     if (!selectedAlert) return;
@@ -121,7 +200,7 @@ export default function AlertCenter() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
         <KpiCard
           title="预警总数"
           value={stats.total}
@@ -141,13 +220,22 @@ export default function AlertCenter() {
           delay={60}
         />
         <KpiCard
+          title="重点跟进"
+          value={stats.priorityFollowUp}
+          unit="条"
+          icon={AlertTriangle}
+          gradientClass="bg-gradient-kpi3"
+          colorClass="text-status-critical"
+          delay={120}
+        />
+        <KpiCard
           title="紧急预警"
           value={stats.critical}
           unit="条"
           icon={AlertTriangle}
           gradientClass="bg-gradient-kpi3"
           colorClass="text-status-critical"
-          delay={120}
+          delay={180}
         />
         <KpiCard
           title="等待超时"
@@ -156,7 +244,7 @@ export default function AlertCenter() {
           icon={Clock}
           gradientClass="bg-gradient-kpi4"
           colorClass="text-project-hyaluronic"
-          delay={180}
+          delay={240}
         />
         <KpiCard
           title="到店未接诊"
@@ -165,7 +253,7 @@ export default function AlertCenter() {
           icon={AlertCircle}
           gradientClass="bg-gradient-kpi1"
           colorClass="text-rosegold-400"
-          delay={240}
+          delay={300}
         />
       </div>
 
@@ -273,10 +361,118 @@ export default function AlertCenter() {
               </button>
             ))}
           </div>
+          <button
+            type="button"
+            onClick={() => setPriorityOnly(!priorityOnly)}
+            className={cn(
+              'badge border transition-all text-xs inline-flex items-center gap-1.5',
+              priorityOnly
+                ? 'bg-status-critical/20 text-status-critical border-status-critical/40'
+                : 'bg-white/5 text-white/60 border-white/15 hover:bg-white/10 hover:text-white/80'
+            )}
+          >
+            🔥 仅看重点跟进
+          </button>
           <div className="text-xs text-white/45 ml-auto">
-            共找到 <span className="text-white/80 font-semibold">{filteredAlerts.length}</span> 条预警
+            共找到 <span className="text-white/80 font-semibold">{filteredAlerts.length}</span> {viewMode === 'record' ? '条记录' : '条预警'}
           </div>
         </div>
+
+        {viewMode === 'record' && (
+          <div className="flex flex-wrap items-center gap-3 mt-4 pt-4 border-t border-white/5">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-white/45">处理人:</span>
+              <select
+                value={handledByFilter}
+                onChange={(e) => setHandledByFilter(e.target.value)}
+                className="input-field !py-1.5 !px-2 text-xs w-auto min-w-[120px]"
+              >
+                <option value="all">全部</option>
+                {handledByOptions.map((name) => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-white/45">处理动作:</span>
+              <select
+                value={handleActionFilter}
+                onChange={(e) => setHandleActionFilter(e.target.value as 'all' | HandleAction)}
+                className="input-field !py-1.5 !px-2 text-xs w-auto min-w-[150px]"
+              >
+                <option value="all">全部</option>
+                {(Object.keys(handleActionLabels) as HandleAction[]).map((a) => (
+                  <option key={a} value={a}>{handleActionLabels[a]}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <CalendarDays className="w-3.5 h-3.5 text-white/40" />
+              <input
+                type="date"
+                value={dateStart}
+                onChange={(e) => setDateStart(e.target.value)}
+                className="input-field !py-1.5 !px-2 text-xs w-auto"
+              />
+              <span className="text-xs text-white/30">至</span>
+              <input
+                type="date"
+                value={dateEnd}
+                onChange={(e) => setDateEnd(e.target.value)}
+                className="input-field !py-1.5 !px-2 text-xs w-auto"
+              />
+            </div>
+
+            <div className="flex items-center gap-1.5 ml-2">
+              {(['today', '7d', '30d'] as const).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => {
+                    const now = new Date();
+                    const fmt = (d: Date) => d.toISOString().slice(0, 10);
+                    if (p === 'today') {
+                      setDateStart(fmt(now));
+                      setDateEnd(fmt(now));
+                    } else if (p === '7d') {
+                      const s = new Date();
+                      s.setDate(s.getDate() - 6);
+                      setDateStart(fmt(s));
+                      setDateEnd(fmt(now));
+                    } else {
+                      const s = new Date();
+                      s.setDate(s.getDate() - 29);
+                      setDateStart(fmt(s));
+                      setDateEnd(fmt(now));
+                    }
+                  }}
+                  className={cn(
+                    'px-2.5 py-1 text-xs rounded-md border transition-all',
+                    'border-white/10 text-white/55 hover:text-white/80 hover:border-white/20 hover:bg-white/5'
+                  )}
+                >
+                  {p === 'today' ? '今日' : p === '7d' ? '近7天' : '近30天'}
+                </button>
+              ))}
+            </div>
+
+            {(dateStart || dateEnd || handledByFilter !== 'all' || handleActionFilter !== 'all') && (
+              <button
+                onClick={() => {
+                  setHandledByFilter('all');
+                  setHandleActionFilter('all');
+                  setDateStart('');
+                  setDateEnd('');
+                }}
+                className="ml-auto text-xs text-white/45 hover:text-white/75 transition-colors inline-flex items-center gap-1"
+              >
+                <X className="w-3 h-3" />
+                清除筛选
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 max-h-[calc(100vh-440px)] overflow-y-auto pr-1 scrollbar-thin">

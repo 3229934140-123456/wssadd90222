@@ -1,3 +1,4 @@
+import React from 'react';
 import {
   Trophy,
   Award,
@@ -12,6 +13,8 @@ import {
   ThumbsUp,
   ListOrdered,
   Info,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -21,10 +24,14 @@ import {
   YAxis,
   Tooltip,
   Area,
+  BarChart,
+  Bar,
+  Legend,
   type TooltipProps,
 } from 'recharts';
 import { cn } from '../../utils';
-import type { StoreRanking, ConsultantEfficiency, TrendSummary } from '../../types';
+import type { StoreRanking, ConsultantEfficiency, TrendSummary, StoreDailyTrend } from '../../types';
+import { generateStoreDailyTrend, STORES } from '../../data/mockData';
 
 interface ReportPreviewProps {
   type: 'store' | 'consultant' | 'comprehensive';
@@ -33,6 +40,8 @@ interface ReportPreviewProps {
   trend30?: TrendSummary;
   storeCount?: number;
   consultantCount?: number;
+  selectedStoreIds?: string[];
+  onRequestStoreComparison?: (storeIds: string[]) => void;
 }
 
 function getRankStyle(rank: number): {
@@ -239,9 +248,70 @@ interface TrendSummaryCardProps {
   title: string;
   trend: TrendSummary;
   accent: string;
+  days: 7 | 30;
+  expanded: boolean;
+  onToggle: () => void;
 }
 
-function TrendSummaryCard({ title, trend, accent }: TrendSummaryCardProps) {
+function TrendDetailTable({ byDay }: { byDay: StoreDailyTrend[] }) {
+  const totalConsultations = byDay.reduce((s, d) => s + d.consultations, 0);
+  const totalAvgWait = Math.round(byDay.reduce((s, d) => s + d.avgWait, 0) / byDay.length);
+  const totalCancels = byDay.reduce((s, d) => s + d.cancels, 0);
+  const totalCancelRate = Number(((totalCancels / Math.max(1, totalConsultations)) * 100).toFixed(1));
+
+  return (
+    <div className="border-t border-white/10 overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead className="bg-white/[0.03]">
+          <tr>
+            <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-white/55">日期</th>
+            <th className="px-4 py-2.5 text-right text-[11px] font-semibold text-white/55">接诊人次</th>
+            <th className="px-4 py-2.5 text-right text-[11px] font-semibold text-white/55">平均等待(分钟)</th>
+            <th className="px-4 py-2.5 text-right text-[11px] font-semibold text-white/55">取消数</th>
+            <th className="px-4 py-2.5 text-right text-[11px] font-semibold text-white/55">取消率(%)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {byDay.map((d) => {
+            const cancelRate = Number(((d.cancels / Math.max(1, d.consultations)) * 100).toFixed(1));
+            const waitWarn = d.avgWait > 40;
+            const cancelWarn = cancelRate > 10;
+            return (
+              <tr key={d.date} className="border-t border-white/[0.04] hover:bg-white/[0.02]">
+                <td className="px-4 py-2.5 text-left text-white/80">{d.date}</td>
+                <td className="px-4 py-2.5 text-right text-white/85 tabular-nums">{d.consultations}</td>
+                <td className={cn(
+                  'px-4 py-2.5 text-right tabular-nums',
+                  waitWarn ? 'text-red-400 font-semibold' : 'text-white/85'
+                )}>
+                  {d.avgWait}
+                </td>
+                <td className="px-4 py-2.5 text-right text-white/85 tabular-nums">{d.cancels}</td>
+                <td className={cn(
+                  'px-4 py-2.5 text-right tabular-nums',
+                  cancelWarn ? 'text-orange-400 font-semibold' : 'text-white/85'
+                )}>
+                  {cancelRate}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+        <tfoot className="bg-white/[0.04]">
+          <tr className="border-t border-white/10">
+            <td className="px-4 py-2.5 text-left text-white/85 font-semibold">合计/平均</td>
+            <td className="px-4 py-2.5 text-right text-white/90 font-semibold tabular-nums">{totalConsultations}</td>
+            <td className="px-4 py-2.5 text-right text-white/90 font-semibold tabular-nums">{totalAvgWait}</td>
+            <td className="px-4 py-2.5 text-right text-white/90 font-semibold tabular-nums">{totalCancels}</td>
+            <td className="px-4 py-2.5 text-right text-white/90 font-semibold tabular-nums">{totalCancelRate}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  );
+}
+
+function TrendSummaryCard({ title, trend, accent, days, expanded, onToggle }: TrendSummaryCardProps) {
   return (
     <div className="glass-card overflow-hidden">
       <header className={cn('px-5 py-4 border-b border-white/10 bg-gradient-to-r', accent)}>
@@ -250,6 +320,14 @@ function TrendSummaryCard({ title, trend, accent }: TrendSummaryCardProps) {
             <h4 className="text-sm font-bold text-white/95">{title}</h4>
             <p className="text-[11px] text-white/50 mt-0.5">高峰时段: {trend.peakHours}</p>
           </div>
+          <button
+            type="button"
+            onClick={onToggle}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-white/70 bg-white/5 hover:bg-white/10 border border-white/10 transition-colors"
+          >
+            {expanded ? '收起' : '展开'}
+            {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          </button>
         </div>
       </header>
       <div className="p-5 space-y-4">
@@ -282,11 +360,187 @@ function TrendSummaryCard({ title, trend, accent }: TrendSummaryCardProps) {
           <TrendMiniChart data={trend.byDay} />
         </div>
       </div>
+      {expanded && <TrendDetailTable byDay={trend.byDay} />}
     </div>
   );
 }
 
-export default function ReportPreview({ type, data, trend7, trend30, storeCount, consultantCount }: ReportPreviewProps) {
+const STORE_COLORS = ['#3B82F6', '#A855F7', '#10B981', '#F97316'];
+
+function getStoreShortName(name: string): string {
+  return name.replace(/店$/, '').slice(0, 4);
+}
+
+interface StoreComparisonMetrics {
+  storeId: string;
+  storeName: string;
+  shortName: string;
+  totalConsultations: number;
+  avgDailyConsultations: number;
+  avgWaitMinutes: number;
+  cancelRate: number;
+  maxDailyConsultations: number;
+  minDailyConsultations: number;
+}
+
+function StoreComparisonSection({ storeIds }: { storeIds: string[] }) {
+  const storeTrendsMap = storeIds.map((sid) => ({
+    store: STORES.find((s) => s.id === sid)!,
+    trends: generateStoreDailyTrend(sid, 7),
+  }));
+
+  const allDates = storeTrendsMap[0]?.trends.map((t) => t.date) ?? [];
+
+  const chartData = allDates.map((date) => {
+    const row: Record<string, string | number> = { date };
+    storeTrendsMap.forEach(({ store, trends }) => {
+      const dayData = trends.find((t) => t.date === date);
+      row[store.id] = dayData?.consultations ?? 0;
+    });
+    return row;
+  });
+
+  const metrics: StoreComparisonMetrics[] = storeTrendsMap.map(({ store, trends }) => {
+    const totalConsultations = trends.reduce((s, d) => s + d.consultations, 0);
+    const totalCancels = trends.reduce((s, d) => s + d.cancels, 0);
+    const avgWaitMinutes = Math.round(trends.reduce((s, d) => s + d.avgWait, 0) / trends.length);
+    const consultations = trends.map((d) => d.consultations);
+    return {
+      storeId: store.id,
+      storeName: store.name,
+      shortName: getStoreShortName(store.name),
+      totalConsultations,
+      avgDailyConsultations: Math.round(totalConsultations / trends.length),
+      avgWaitMinutes,
+      cancelRate: Number(((totalCancels / Math.max(1, totalConsultations)) * 100).toFixed(1)),
+      maxDailyConsultations: Math.max(...consultations),
+      minDailyConsultations: Math.min(...consultations),
+    };
+  });
+
+  const indicatorDefs: Array<{
+    key: keyof Omit<StoreComparisonMetrics, 'storeId' | 'storeName' | 'shortName'>;
+    label: string;
+    lowerIsBetter: boolean;
+    suffix?: string;
+  }> = [
+    { key: 'totalConsultations', label: '总接诊', lowerIsBetter: false, suffix: '人' },
+    { key: 'avgDailyConsultations', label: '日均接诊', lowerIsBetter: false, suffix: '人' },
+    { key: 'avgWaitMinutes', label: '平均等待', lowerIsBetter: true, suffix: '分钟' },
+    { key: 'cancelRate', label: '取消率', lowerIsBetter: true, suffix: '%' },
+    { key: 'maxDailyConsultations', label: '最高单日接诊', lowerIsBetter: false, suffix: '人' },
+    { key: 'minDailyConsultations', label: '最低单日接诊', lowerIsBetter: false, suffix: '人' },
+  ];
+
+  return (
+    <div className="glass-card overflow-hidden">
+      <header className="px-5 py-4 border-b border-white/10 bg-gradient-to-r from-primary-500/15 to-primary-500/5">
+        <h4 className="text-sm font-bold text-white/95 flex items-center gap-2">
+          <BarChart3 className="w-4 h-4 text-primary-400" />
+          选中门店对比（近7天）
+        </h4>
+      </header>
+      <div className="p-5 space-y-5">
+        <div style={{ width: '100%', height: 280 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={chartData} margin={{ top: 10, right: 10, left: -15, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+              <XAxis
+                dataKey="date"
+                axisLine={false}
+                tickLine={false}
+                tick={{ fill: 'rgba(255,255,255,0.55)', fontSize: 11 }}
+              />
+              <YAxis
+                axisLine={false}
+                tickLine={false}
+                tick={{ fill: 'rgba(255,255,255,0.55)', fontSize: 11 }}
+                width={28}
+              />
+              <Tooltip content={<MiniTooltip />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
+              <Legend
+                formatter={(value) => {
+                  const m = metrics.find((x) => x.storeId === value);
+                  return <span className="text-xs text-white/70">{m?.shortName ?? value}</span>;
+                }}
+                iconType="rect"
+                wrapperStyle={{ paddingTop: 10 }}
+              />
+              {metrics.map((m, idx) => (
+                <Bar
+                  key={m.storeId}
+                  dataKey={m.storeId}
+                  name={m.storeId}
+                  fill={STORE_COLORS[idx % STORE_COLORS.length]}
+                  radius={[4, 4, 0, 0]}
+                  barSize={18}
+                />
+              ))}
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-white/[0.03]">
+              <tr>
+                <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-white/55">指标</th>
+                {metrics.map((m) => (
+                  <th key={m.storeId} className="px-3 py-2.5 text-right text-[11px] font-semibold text-white/55">
+                    {m.shortName}
+                  </th>
+                ))}
+                <th className="px-3 py-2.5 text-right text-[11px] font-semibold text-white/55">最高/最低</th>
+              </tr>
+            </thead>
+            <tbody>
+              {indicatorDefs.map((ind) => {
+                const values = metrics.map((m) => m[ind.key]);
+                const maxVal = Math.max(...values);
+                const minVal = Math.min(...values);
+                return (
+                  <tr key={ind.key} className="border-t border-white/[0.04] hover:bg-white/[0.02]">
+                    <td className="px-3 py-2.5 text-left text-white/75">{ind.label}</td>
+                    {metrics.map((m) => {
+                      const val = m[ind.key];
+                      const isMax = val === maxVal;
+                      const isMin = val === minVal;
+                      let cellCls = 'text-white/85 tabular-nums';
+                      if (ind.lowerIsBetter) {
+                        if (isMin) cellCls = 'text-emerald-400 font-semibold tabular-nums';
+                        else if (isMax) cellCls = 'text-red-400 font-semibold tabular-nums';
+                      } else {
+                        if (isMax) cellCls = 'text-emerald-400 font-semibold tabular-nums';
+                        else if (isMin) cellCls = 'text-red-400 font-semibold tabular-nums';
+                      }
+                      return (
+                        <td key={m.storeId} className={cn('px-3 py-2.5 text-right', cellCls)}>
+                          {val}
+                          {ind.suffix && <span className="text-[10px] text-white/40 font-normal ml-0.5">{ind.suffix}</span>}
+                        </td>
+                      );
+                    })}
+                    <td className="px-3 py-2.5 text-right text-white/60 tabular-nums text-[11px]">
+                      {maxVal} / {minVal}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function ReportPreview({ type, data, trend7, trend30, storeCount, consultantCount, selectedStoreIds }: ReportPreviewProps) {
+  const [expandedDays, setExpandedDays] = React.useState<7 | 30 | null>(null);
+
+  const toggleExpanded = (days: 7 | 30) => {
+    setExpandedDays((prev) => (prev === days ? null : days));
+  };
+
   const titleMap: Record<ReportPreviewProps['type'], {
     title: string;
     subtitle: string;
@@ -579,6 +833,9 @@ export default function ReportPreview({ type, data, trend7, trend30, storeCount,
                   title="近7天运营概览"
                   trend={trend7}
                   accent="from-primary-500/20 to-primary-500/5"
+                  days={7}
+                  expanded={expandedDays === 7}
+                  onToggle={() => toggleExpanded(7)}
                 />
               )}
               {trend30 && (
@@ -586,9 +843,17 @@ export default function ReportPreview({ type, data, trend7, trend30, storeCount,
                   title="近30天运营概览"
                   trend={trend30}
                   accent="from-project-skincare/20 to-project-skincare/5"
+                  days={30}
+                  expanded={expandedDays === 30}
+                  onToggle={() => toggleExpanded(30)}
                 />
               )}
             </div>
+
+            {selectedStoreIds && selectedStoreIds.length >= 2 && selectedStoreIds.length <= 4 && (
+              <StoreComparisonSection storeIds={selectedStoreIds} />
+            )}
+
             <div>
               <h4 className="text-sm font-semibold text-white/70 px-4 py-3 flex items-center gap-2">
                 <StoreIcon className="w-4 h-4 text-primary-400" />

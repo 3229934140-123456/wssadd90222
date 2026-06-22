@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   X,
   Sparkles,
@@ -14,7 +14,9 @@ import {
   UserCheck,
 } from 'lucide-react';
 import { cn, formatDateTime } from '../../utils';
+import { useGlobalStore } from '../../store';
 import type { Alert, AlertType, HandleAction } from '../../types';
+import type { PersistedHandledAlert } from '../../utils/storage';
 
 interface AlertDetailPanelProps {
   alert: Alert | null;
@@ -111,6 +113,7 @@ export default function AlertDetailPanel({ alert, onClose, onHandle }: AlertDeta
   const [note, setNote] = useState('');
   const [action, setAction] = useState<HandleAction | ''>('');
   const [submitting, setSubmitting] = useState(false);
+  const { addHandledAlert } = useGlobalStore();
 
   if (!alert) return null;
 
@@ -123,11 +126,65 @@ export default function AlertDetailPanel({ alert, onClose, onHandle }: AlertDeta
 
   const canSubmit = action !== '' && !submitting && !alert.isHandled;
 
+  const escalationLevelLabel: Record<1 | 2 | 3, string> = {
+    1: 'Ⅰ',
+    2: 'Ⅱ',
+    3: 'Ⅲ',
+  };
+
+  const recommendedAction: HandleAction = (() => {
+    switch (alert.type) {
+      case 'timeout_wait':
+        return 'arrange_consultant';
+      case 'arrived_not_consulted':
+        return 'apologize_customer';
+      case 'long_occupation':
+        return 'adjust_schedule';
+      case 'frequent_reassign':
+        return 'reassign';
+      default:
+        return applicableActions[0] || 'other';
+    }
+  })();
+
+  const initialAction: HandleAction | '' = alert.isPriorityFollowUp ? recommendedAction : '';
+
+  useEffect(() => {
+    if (alert && !alert.isHandled) {
+      setAction(initialAction);
+    } else {
+      setAction('');
+    }
+    setNote('');
+  }, [alert?.id, initialAction]);
+
   const handleSubmit = () => {
     if (!canSubmit) return;
     setSubmitting(true);
     setTimeout(() => {
-      onHandle(action, note.trim());
+      const handledAt = new Date().toISOString();
+      const handledBy = '张明';
+      const trimmedNote = note.trim() || '已处理';
+
+      const persisted: PersistedHandledAlert = {
+        id: alert.id,
+        alertType: alert.type,
+        severity: alert.severity,
+        storeId: alert.storeId,
+        storeName: alert.storeName,
+        customerName: alert.customerName,
+        consultantName: alert.consultantName,
+        message: alert.message,
+        suggestion: alert.suggestion,
+        triggeredAt: alert.triggeredAt,
+        handledAt,
+        handledBy,
+        handleAction: action,
+        handleNote: trimmedNote,
+      };
+      addHandledAlert(persisted);
+
+      onHandle(action, trimmedNote);
       setSubmitting(false);
       setNote('');
       setAction('');
@@ -176,6 +233,11 @@ export default function AlertDetailPanel({ alert, onClose, onHandle }: AlertDeta
                   >
                     {severity.label}
                   </span>
+                  {alert.isPriorityFollowUp && (
+                    <span className="badge border border-status-critical/50 bg-status-critical/15 text-status-critical animate-pulse">
+                      🔥 重点跟进
+                    </span>
+                  )}
                   {alert.isHandled && (
                     <span className="badge bg-status-success/20 text-status-success border border-status-success/30">
                       <CheckCircle2 className="w-3 h-3" />
@@ -208,6 +270,31 @@ export default function AlertDetailPanel({ alert, onClose, onHandle }: AlertDeta
 
         <div className="flex-1 overflow-y-auto scrollbar-thin">
           <div className="p-6 space-y-5">
+            {alert.isPriorityFollowUp && alert.escalationReason && (
+              <section>
+                <div className="rounded-2xl overflow-hidden border border-status-critical/30 bg-gradient-to-br from-status-critical/20 via-status-warning/10 to-transparent">
+                  <div className="px-4 py-3 flex items-center gap-2 border-b border-status-critical/20">
+                    <div className="w-8 h-8 rounded-lg bg-status-critical/20 flex items-center justify-center">
+                      <AlertTriangle className="w-4 h-4 text-status-critical" />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-semibold text-status-critical">预警升级说明</p>
+                      {alert.escalationLevel && (
+                        <span className="badge border border-status-critical/50 bg-status-critical/15 text-status-critical">
+                          等级 {escalationLevelLabel[alert.escalationLevel]}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="px-4 py-4">
+                    <p className="text-sm text-status-warning/90 leading-relaxed">
+                      {alert.escalationReason}
+                    </p>
+                  </div>
+                </div>
+              </section>
+            )}
+
             <section>
               <h4 className="text-xs font-semibold text-white/50 uppercase tracking-wider mb-3">
                 相关信息

@@ -80,6 +80,9 @@ export interface Alert {
   handleNote?: string;
   handleAction?: HandleAction;
   suggestion: string;
+  isPriorityFollowUp?: boolean;
+  escalationLevel?: 1 | 2 | 3;
+  escalationReason?: string;
 }
 
 export interface WaitingAnalysis {
@@ -130,6 +133,15 @@ export interface TrendDataPoint {
   consultations: number;
 }
 
+export interface StoreDailyTrend {
+  date: string;
+  consultations: number;
+  avgWait: number;
+  cancels: number;
+  storeId?: string;
+  storeName?: string;
+}
+
 export interface TrendSummary {
   days: 7 | 30;
   totalConsultations: number;
@@ -142,7 +154,7 @@ export interface TrendSummary {
     waitDeltaPct: number;
     cancelRateDeltaPct: number;
   };
-  byDay: { date: string; consultations: number; avgWait: number; cancels: number }[];
+  byDay: StoreDailyTrend[];
 }
 
 export type HandleAction = 'arrange_consultant' | 'apologize_customer' | 'adjust_schedule' | 'open_room' | 'reassign' | 'other';

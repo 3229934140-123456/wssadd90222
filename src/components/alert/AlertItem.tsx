@@ -186,6 +186,9 @@ export default function AlertItem({ alert, isSelected, onClick, mode = 'alert' }
     );
   }
 
+  const isPriority = alert.isPriorityFollowUp
+  const isLevel3 = alert.escalationLevel === 3
+
   return (
     <button
       type="button"
@@ -194,6 +197,8 @@ export default function AlertItem({ alert, isSelected, onClick, mode = 'alert' }
         'w-full text-left rounded-2xl overflow-hidden transition-all duration-300',
         'border bg-gradient-card backdrop-blur-xl',
         'group',
+        isPriority && 'border-status-critical/40',
+        isLevel3 && 'bg-status-critical/5',
         isSelected
           ? cn(
               'border-primary-500/50 ring-1 ring-primary-500/30',
@@ -201,7 +206,7 @@ export default function AlertItem({ alert, isSelected, onClick, mode = 'alert' }
               'bg-white/[0.04]'
             )
           : cn(
-              'border-white/10',
+              !isPriority && 'border-white/10',
               severity.glow,
               'hover:border-white/20 hover:bg-white/[0.03] hover:-translate-y-0.5 hover:shadow-card-hover'
             )
@@ -229,7 +234,7 @@ export default function AlertItem({ alert, isSelected, onClick, mode = 'alert' }
 
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between gap-2 mb-1.5">
-                <div className="flex items-center gap-2 min-w-0">
+                <div className="flex items-center gap-2 min-w-0 flex-wrap">
                   <h5 className="font-semibold text-white/95 truncate">
                     {typeLabels[alert.type]}
                   </h5>
@@ -242,6 +247,11 @@ export default function AlertItem({ alert, isSelected, onClick, mode = 'alert' }
                   >
                     {severity.label}
                   </span>
+                  {isPriority && (
+                    <span className="badge flex-shrink-0 border border-status-critical/50 bg-status-critical/15 text-status-critical animate-pulse">
+                      🔥 重点跟进
+                    </span>
+                  )}
                   {!alert.isHandled && (
                     <span className="flex-shrink-0 relative inline-flex items-center justify-center w-2">
                       <span

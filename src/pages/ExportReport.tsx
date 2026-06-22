@@ -23,7 +23,8 @@ import {
   generateConsultantEfficiency,
   generateTrendSummary,
 } from '../data/mockData';
-import { cn } from '../utils';
+import { cn, wait } from '../utils';
+import { exportReport } from '../utils/export';
 import type { StoreRanking, ConsultantEfficiency, TrendSummary } from '../types';
 
 type ReportType = 'store' | 'consultant' | 'comprehensive';
@@ -118,14 +119,30 @@ export default function ExportReport() {
     });
   };
 
-  const handleExport = () => {
+  const handleExport = async () => {
     setExporting(true);
     setExportSuccess(false);
-    setTimeout(() => {
-      setExporting(false);
+    await wait(400);
+    try {
+      await exportReport({
+        reportType: config.reportType,
+        format: config.format === 'pdf' ? 'xlsx' : config.format,
+        storeIds: config.stores.includes('all') ? [] : config.stores,
+        storeNames: filteredStores.map((s) => s.name),
+        dateRange: config.dateRange,
+        generatedAt: new Date().toISOString(),
+        storeRanking,
+        consultantEfficiency,
+        trend7,
+        trend30,
+      });
       setExportSuccess(true);
+    } catch {
+      setExportSuccess(false);
+    } finally {
+      setExporting(false);
       setTimeout(() => setExportSuccess(false), 3000);
-    }, 1500);
+    }
   };
 
   const reportTypeOptions: {
@@ -190,7 +207,7 @@ export default function ExportReport() {
           ) : (
             <>
               <Download className="w-5 h-5" />
-              <span>导出报表</span>
+              <span>{config.format === 'pdf' ? '导出(Excel)' : '导出报表'}</span>
             </>
           )}
         </button>

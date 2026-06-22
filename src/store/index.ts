@@ -1,4 +1,6 @@
 import { create } from 'zustand';
+import { loadHandledAlerts, saveHandledAlert } from '../utils/storage';
+import type { PersistedHandledAlert } from '../utils/storage';
 
 export type AlertFilterType = 'all' | 'timeout_wait' | 'long_occupation' | 'frequent_reassign' | 'arrived_not_consulted';
 
@@ -13,6 +15,9 @@ export interface GlobalState {
   setSelectedAlertId: (id: string | null) => void;
   alertFilter: AlertFilterType;
   setAlertFilter: (f: AlertFilterType) => void;
+  handledAlerts: PersistedHandledAlert[];
+  setHandledAlerts: (alerts: PersistedHandledAlert[]) => void;
+  addHandledAlert: (alert: PersistedHandledAlert) => void;
 }
 
 export const useGlobalStore = create<GlobalState>((set) => ({
@@ -26,4 +31,18 @@ export const useGlobalStore = create<GlobalState>((set) => ({
   setSelectedAlertId: (id: string | null) => set({ selectedAlertId: id }),
   alertFilter: 'all',
   setAlertFilter: (f: AlertFilterType) => set({ alertFilter: f }),
+  handledAlerts: loadHandledAlerts(),
+  setHandledAlerts: (alerts: PersistedHandledAlert[]) => set({ handledAlerts: alerts }),
+  addHandledAlert: (alert: PersistedHandledAlert) => {
+    saveHandledAlert(alert);
+    set((state) => {
+      const existingIndex = state.handledAlerts.findIndex((a) => a.id === alert.id);
+      if (existingIndex >= 0) {
+        const next = [...state.handledAlerts];
+        next[existingIndex] = alert;
+        return { handledAlerts: next };
+      }
+      return { handledAlerts: [...state.handledAlerts, alert] };
+    });
+  },
 }));

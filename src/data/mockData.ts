@@ -9,6 +9,7 @@ import type {
   ConsultantEfficiency,
   TrendDataPoint,
   TrendSummary,
+  StoreDailyTrend,
   ProjectType,
   CustomerStatus,
   ConsultantStatus,
@@ -356,6 +357,24 @@ export function generateAlerts(storeId?: string): Alert[] {
         severity = 'low'
       }
 
+      let isPriorityFollowUp = false
+      let escalationLevel: 1 | 2 | 3 = 1
+      let escalationReason: string | undefined = undefined
+
+      if (waitMinutes >= threshold * 3) {
+        escalationLevel = 3
+        isPriorityFollowUp = true
+        escalationReason = `等待时间已超门店标准3倍(${waitMinutes}分钟)，需立即处理`
+      } else if (waitMinutes >= threshold * 2) {
+        escalationLevel = 2
+        isPriorityFollowUp = true
+        escalationReason = `等待时间已超门店标准2倍(${waitMinutes}分钟)，请尽快处理`
+      } else if (waitMinutes >= threshold * 1.5 && seededRandom(seed + 500) < 0.4) {
+        escalationLevel = 1
+        isPriorityFollowUp = true
+        escalationReason = '等待超时未处理超过30分钟，升级关注'
+      }
+
       const isHandled = seededRandom(seed + 1) < 0.15
       const message = `顾客${customer.name}已等待${waitMinutes}分钟（门店标准${threshold}分钟），请尽快安排接诊`
       const suggestion = '建议增派空闲咨询师，或主动联系顾客提供等候区饮品服务'
@@ -380,7 +399,10 @@ export function generateAlerts(storeId?: string): Alert[] {
         handledAt: isHandled ? new Date(triggeredDate.getTime() + 15 * 60 * 1000).toISOString() : undefined,
         handleNote: isHandled ? '已协调安排，问题解决' : undefined,
         handleAction: isHandled ? ('arrange_consultant' as HandleAction) : undefined,
-        suggestion
+        suggestion,
+        isPriorityFollowUp,
+        escalationLevel,
+        escalationReason
       })
     }
 
@@ -397,6 +419,24 @@ export function generateAlerts(storeId?: string): Alert[] {
         severity = 'medium'
       } else {
         severity = 'low'
+      }
+
+      let isPriorityFollowUp = false
+      let escalationLevel: 1 | 2 | 3 = 1
+      let escalationReason: string | undefined = undefined
+
+      if (lateMin >= 45) {
+        escalationLevel = 3
+        isPriorityFollowUp = true
+        escalationReason = `到店未接诊已达${lateMin}分钟，超过45分钟严重超时，需立即处理`
+      } else if (lateMin >= lateThreshold + 25) {
+        escalationLevel = 2
+        isPriorityFollowUp = true
+        escalationReason = `到店未接诊已达${lateMin}分钟，请尽快安排接诊`
+      } else if (lateMin >= lateThreshold + 15 && seededRandom(seed + 600) < 0.45) {
+        escalationLevel = 1
+        isPriorityFollowUp = true
+        escalationReason = '到店未接诊时间过长，升级关注'
       }
 
       const isHandled = seededRandom(seed + 1) < 0.2
@@ -423,7 +463,10 @@ export function generateAlerts(storeId?: string): Alert[] {
         handledAt: isHandled ? new Date(triggeredDate.getTime() + 15 * 60 * 1000).toISOString() : undefined,
         handleNote: isHandled ? '已协调安排，问题解决' : undefined,
         handleAction: isHandled ? ('apologize_customer' as HandleAction) : undefined,
-        suggestion
+        suggestion,
+        isPriorityFollowUp,
+        escalationLevel,
+        escalationReason
       })
     }
 
@@ -484,7 +527,10 @@ export function generateAlerts(storeId?: string): Alert[] {
         handledAt: isHandled ? new Date(triggeredDate.getTime() + 15 * 60 * 1000).toISOString() : undefined,
         handleNote: isHandled ? '已协调安排，问题解决' : undefined,
         handleAction: isHandled ? (type === 'long_occupation' ? 'adjust_schedule' as HandleAction : 'reassign' as HandleAction) : undefined,
-        suggestion
+        suggestion,
+        isPriorityFollowUp: false,
+        escalationLevel: 1,
+        escalationReason: undefined
       })
     }
   }
@@ -492,6 +538,12 @@ export function generateAlerts(storeId?: string): Alert[] {
   return alerts.sort((a, b) => {
     const severityOrder: Record<AlertSeverity, number> = { critical: 0, high: 1, medium: 2, low: 3 }
     if (a.isHandled !== b.isHandled) return a.isHandled ? 1 : -1
+    if (a.isPriorityFollowUp && !b.isPriorityFollowUp) return -1
+    if (!a.isPriorityFollowUp && b.isPriorityFollowUp) return 1
+    if (a.isPriorityFollowUp && b.isPriorityFollowUp) {
+      const levelDiff = (b.escalationLevel || 1) - (a.escalationLevel || 1)
+      if (levelDiff !== 0) return levelDiff
+    }
     return severityOrder[a.severity] - severityOrder[b.severity]
   })
 }
@@ -715,4 +767,50 @@ export function generateTrendSummary(days: 7 | 30, storeIds?: string[]): TrendSu
     },
     byDay
   }
+}
+
+export function generateStoreDailyTrend(storeId: string, days: 7 | 30): StoreDailyTrend[] {
+  const byDay: StoreDailyTrend[] = []
+  const today = new Date()
+  const store = STORES.find((s) => s.id === storeId) || STORES[0]
+
+  let cityMultiplier: number
+  if (store.city === '上海' || store.city === '北京') {
+    cityMultiplier = 1.3
+  } else if (store.city === '杭州' || store.city === '南京') {
+    cityMultiplier = 0.75
+  } else {
+    cityMultiplier = 1.0
+  }
+
+  for (let i = days - 1; i >= 0; i--) {
+    const date = new Date(today)
+    date.setDate(today.getDate() - i)
+    const dateStr = `${(date.getMonth() + 1).toString().padStart(2, '0')}/${date.getDate().toString().padStart(2, '0')}`
+    const dayOfWeek = date.getDay()
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6
+
+    const seedBase = store.id.charCodeAt(6) * 100 + days * 10 + i * 37
+    const baseConsultations = isWeekend ? 28 : 58
+    const dayFluctuation = (seededRandom(seedBase + 1) - 0.5) * (days === 30 ? 30 : 16)
+    const consultations = Math.max(6, Math.floor((baseConsultations + dayFluctuation) * cityMultiplier))
+
+    const baseWait = isWeekend ? 20 : (store.city === '上海' || store.city === '北京' ? 34 : 26)
+    const waitFluctuation = (seededRandom(seedBase + 2) - 0.5) * 14
+    const avgWait = Math.max(6, Math.floor(baseWait + waitFluctuation))
+
+    const baseCancels = Math.floor(consultations * (0.045 + seededRandom(seedBase + 3) * 0.06))
+    const cancels = Math.max(0, baseCancels)
+
+    byDay.push({
+      date: dateStr,
+      consultations,
+      avgWait,
+      cancels,
+      storeId: store.id,
+      storeName: store.name
+    })
+  }
+
+  return byDay
 }

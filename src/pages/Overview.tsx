@@ -157,7 +157,16 @@ export default function Overview() {
     const arrivedNotConsultedAlerts = storeAlerts.filter(
       (a) => a.type === 'arrived_not_consulted' && !a.isHandled
     );
-    const recentAlerts = unhandledAlerts.slice(0, 3);
+    const priorityFollowUpAlerts = storeAlerts.filter((a) => a.isPriorityFollowUp && !a.isHandled);
+    const sortedAlerts = [...unhandledAlerts].sort((a, b) => {
+      if (a.isPriorityFollowUp && !b.isPriorityFollowUp) return -1;
+      if (!a.isPriorityFollowUp && b.isPriorityFollowUp) return 1;
+      if (a.isPriorityFollowUp && b.isPriorityFollowUp) {
+        return (b.escalationLevel || 1) - (a.escalationLevel || 1);
+      }
+      return 0;
+    });
+    const recentAlerts = sortedAlerts.slice(0, 3);
 
     return (
       <>
@@ -342,6 +351,13 @@ export default function Overview() {
                     </div>
                     <div className="w-px h-8 bg-white/10" />
                     <div>
+                      <p className="text-[10px] text-white/45 leading-tight">重点跟进</p>
+                      <p className="text-sm font-semibold text-status-critical tabular-nums leading-tight mt-0.5">
+                        {priorityFollowUpAlerts.length} 条
+                      </p>
+                    </div>
+                    <div className="w-px h-8 bg-white/10" />
+                    <div>
                       <p className="text-[10px] text-white/45 leading-tight">等待超时</p>
                       <p className="text-sm font-semibold text-status-critical tabular-nums leading-tight mt-0.5">
                         {timeoutWaitAlerts.length} 条
@@ -361,9 +377,22 @@ export default function Overview() {
                       {recentAlerts.map((alert) => (
                         <div
                           key={alert.id}
-                          className="p-2.5 rounded-lg bg-white/[0.02] border border-white/5"
+                          className={cn(
+                            'p-2.5 rounded-lg border',
+                            alert.isPriorityFollowUp
+                              ? 'bg-status-critical/5 border-status-critical/30'
+                              : 'bg-white/[0.02] border-white/5'
+                          )}
                         >
-                          <p className="text-xs text-white/70 line-clamp-1 leading-relaxed">
+                          <p
+                            className={cn(
+                              'text-xs line-clamp-1 leading-relaxed',
+                              alert.isPriorityFollowUp
+                                ? 'text-status-critical font-medium'
+                                : 'text-white/70'
+                            )}
+                          >
+                            {alert.isPriorityFollowUp && '🔥 '}
                             {alert.message}
                           </p>
                         </div>
@@ -376,6 +405,21 @@ export default function Overview() {
           </div>
 
           <footer className="px-6 py-5 border-t border-white/10 bg-dark-900/80 backdrop-blur-xl">
+            {priorityFollowUpAlerts.length > 0 && (
+              <button
+                type="button"
+                onClick={() => handleNavigate('/alert', detailStore.id)}
+                className="w-full mb-3 inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold
+                           bg-gradient-to-r from-status-critical/30 via-status-critical/20 to-status-warning/20
+                           border border-status-critical/40 text-status-critical hover:from-status-critical/40
+                           hover:via-status-critical/30 hover:to-status-warning/30 transition-all duration-200
+                           shadow-[0_0_20px_rgba(239,68,68,0.15)] animate-pulse-slow"
+              >
+                <AlertTriangle className="w-4 h-4" />
+                <span>立即处理重点跟进预警 ({priorityFollowUpAlerts.length} 条)</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            )}
             <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
