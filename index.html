@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="医美运营数据看板 - 连锁机构接诊排队管理系统。实时监控门店运营、咨询师负载、顾客等待分析，智能预警与报表导出功能。" />
+    <meta name="keywords" content="医美,运营看板,排队管理,咨询师,数据分析,连锁机构" />
+    <title>医美运营数据看板 - 连锁机构接诊排队管理系统</title>
+    <script type="module">
+      if (import.meta.hot?.on) {
+        import.meta.hot.on('vite:error', (error) => {
+          if (error.err) {
+            console.error(
+              [error.err.message, error.err.frame].filter(Boolean).join('\n'),
+            )
+          }
+        })
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
