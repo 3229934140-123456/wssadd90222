@@ -1,8 +1,16 @@
 import { create } from 'zustand';
-import { loadHandledAlerts, saveHandledAlert } from '../utils/storage';
+import { loadHandledAlerts, saveHandledAlert, loadExportHistory, saveExportHistoryEntry } from '../utils/storage';
 import type { PersistedHandledAlert } from '../utils/storage';
+import type { ExportHistoryEntry } from '../types';
 
 export type AlertFilterType = 'all' | 'timeout_wait' | 'long_occupation' | 'frequent_reassign' | 'arrived_not_consulted';
+
+export interface PendingAlertFilters {
+  storeId: string;
+  priorityOnly?: boolean;
+  alertFilter?: AlertFilterType;
+  statusFilter?: 'all' | 'unhandled' | 'handled';
+}
 
 export interface GlobalState {
   currentStoreId: string;
@@ -18,6 +26,14 @@ export interface GlobalState {
   handledAlerts: PersistedHandledAlert[];
   setHandledAlerts: (alerts: PersistedHandledAlert[]) => void;
   addHandledAlert: (alert: PersistedHandledAlert) => void;
+  pendingAlertFilters?: PendingAlertFilters;
+  setPendingAlertFilters: (f: PendingAlertFilters | undefined) => void;
+  clearPendingAlertFilters: () => void;
+  handledAlertIds: Set<string>;
+  markAlertHandled: (id: string) => void;
+  exportHistory: ExportHistoryEntry[];
+  setExportHistory: (list: ExportHistoryEntry[]) => void;
+  addExportHistoryEntry: (entry: ExportHistoryEntry) => void;
 }
 
 export const useGlobalStore = create<GlobalState>((set) => ({
@@ -40,9 +56,28 @@ export const useGlobalStore = create<GlobalState>((set) => ({
       if (existingIndex >= 0) {
         const next = [...state.handledAlerts];
         next[existingIndex] = alert;
-        return { handledAlerts: next };
+        return { handledAlerts: next, handledAlertIds: new Set([...state.handledAlertIds, alert.id]) };
       }
-      return { handledAlerts: [...state.handledAlerts, alert] };
+      return { handledAlerts: [...state.handledAlerts, alert], handledAlertIds: new Set([...state.handledAlertIds, alert.id]) };
+    });
+  },
+  pendingAlertFilters: undefined,
+  setPendingAlertFilters: (f: PendingAlertFilters | undefined) => set({ pendingAlertFilters: f }),
+  clearPendingAlertFilters: () => set({ pendingAlertFilters: undefined }),
+  handledAlertIds: new Set<string>(),
+  markAlertHandled: (id: string) =>
+    set((state) => {
+      const next = new Set(state.handledAlertIds);
+      next.add(id);
+      return { handledAlertIds: next };
+    }),
+  exportHistory: loadExportHistory(),
+  setExportHistory: (list: ExportHistoryEntry[]) => set({ exportHistory: list }),
+  addExportHistoryEntry: (entry: ExportHistoryEntry) => {
+    saveExportHistoryEntry(entry);
+    set((state) => {
+      const next = [entry, ...state.exportHistory].slice(0, 30);
+      return { exportHistory: next };
     });
   },
 }));

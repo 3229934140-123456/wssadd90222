@@ -13,6 +13,9 @@ import {
   Settings2,
   ChevronDown,
   Sparkles,
+  History,
+  Trash2,
+  Inbox,
 } from 'lucide-react';
 import ReportPreview from '../components/export/ReportPreview';
 import KpiCard from '../components/common/KpiCard';
@@ -24,8 +27,10 @@ import {
   generateTrendSummary,
 } from '../data/mockData';
 import { cn, wait } from '../utils';
-import { exportReport } from '../utils/export';
-import type { StoreRanking, ConsultantEfficiency, TrendSummary } from '../types';
+import { exportReport, redownloadExport } from '../utils/export';
+import { clearExportHistory } from '../utils/storage';
+import { useGlobalStore } from '../store';
+import type { StoreRanking, ConsultantEfficiency, TrendSummary, ExportHistoryEntry } from '../types';
 
 type ReportType = 'store' | 'consultant' | 'comprehensive';
 type ExportFormat = 'xlsx' | 'csv' | 'pdf';
@@ -49,6 +54,21 @@ const today = new Date();
 const defaultStart = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
 const formatDate = (d: Date) => d.toISOString().slice(0, 10);
 
+function formatGeneratedAt(isoStr: string): string {
+  const d = new Date(isoStr);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function getFormatLabel(format: ExportHistoryEntry['format']): string {
+  const map: Record<ExportHistoryEntry['format'], string> = {
+    xlsx: 'Excel',
+    csv: 'CSV',
+    pdf: 'PDF',
+  };
+  return map[format];
+}
+
 export default function ExportReport() {
   const [config, setConfig] = useState<ExportConfig>({
     reportType: 'store',
@@ -64,6 +84,9 @@ export default function ExportReport() {
   const [exporting, setExporting] = useState(false);
   const [exportSuccess, setExportSuccess] = useState(false);
   const [storeDropdownOpen, setStoreDropdownOpen] = useState(false);
+  const [clearing, setClearing] = useState(false);
+
+  const { exportHistory, addExportHistoryEntry, setExportHistory } = useGlobalStore();
 
   const filteredStores = useMemo(() => {
     if (config.stores.includes('all')) return STORES;
@@ -75,16 +98,33 @@ export default function ExportReport() {
     return filteredStores.map((s) => s.id);
   }, [config.stores, filteredStores]);
 
-  const storeRanking = useMemo(() => generateStoreRanking(filteredStoreIds), [filteredStoreIds]);
-  const consultantEfficiency = useMemo(() => generateConsultantEfficiency(filteredStoreIds), [filteredStoreIds]);
+  const daysSpan = useMemo(() => {
+    const diff = Math.max(
+      1,
+      Math.floor(
+        (new Date(config.dateRange.end).getTime() - new Date(config.dateRange.start).getTime()) /
+          86400000
+      ) + 1
+    );
+    return diff <= 7 ? 7 : diff <= 30 ? 30 : 30;
+  }, [config.dateRange]);
+
+  const storeRanking = useMemo(
+    () => generateStoreRanking(filteredStoreIds, config.dateRange),
+    [filteredStoreIds, config.dateRange]
+  );
+  const consultantEfficiency = useMemo(
+    () => generateConsultantEfficiency(filteredStoreIds, config.dateRange),
+    [filteredStoreIds, config.dateRange]
+  );
 
   const trend7 = useMemo<TrendSummary>(
-    () => generateTrendSummary(7, filteredStoreIds),
-    [filteredStoreIds]
+    () => generateTrendSummary(7, filteredStoreIds, config.dateRange),
+    [filteredStoreIds, config.dateRange]
   );
   const trend30 = useMemo<TrendSummary>(
-    () => generateTrendSummary(30, filteredStoreIds),
-    [filteredStoreIds]
+    () => generateTrendSummary(30, filteredStoreIds, config.dateRange),
+    [filteredStoreIds, config.dateRange]
   );
 
   const filteredStoreConsultants = useMemo(() => {
@@ -96,6 +136,8 @@ export default function ExportReport() {
     if (config.reportType === 'consultant') return consultantEfficiency as any;
     return storeRanking as any;
   }, [config.reportType, storeRanking, consultantEfficiency]);
+
+  const recentHistory = useMemo(() => exportHistory.slice(0, 10), [exportHistory]);
 
   const toggleStore = (storeId: string) => {
     if (storeId === 'all') {
@@ -124,9 +166,9 @@ export default function ExportReport() {
     setExportSuccess(false);
     await wait(400);
     try {
-      await exportReport({
+      const entry = await exportReport({
         reportType: config.reportType,
-        format: config.format === 'pdf' ? 'xlsx' : config.format,
+        format: config.format,
         storeIds: config.stores.includes('all') ? [] : config.stores,
         storeNames: filteredStores.map((s) => s.name),
         dateRange: config.dateRange,
@@ -136,12 +178,34 @@ export default function ExportReport() {
         trend7,
         trend30,
       });
+      addExportHistoryEntry(entry);
       setExportSuccess(true);
     } catch {
       setExportSuccess(false);
     } finally {
       setExporting(false);
       setTimeout(() => setExportSuccess(false), 3000);
+    }
+  };
+
+  const handleRedownload = async (entry: ExportHistoryEntry) => {
+    try {
+      await redownloadExport(entry);
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleClearHistory = () => {
+    if (!window.confirm('确定要清空所有导出历史记录吗？此操作不可撤销。')) {
+      return;
+    }
+    setClearing(true);
+    try {
+      clearExportHistory();
+      setExportHistory([]);
+    } finally {
+      setClearing(false);
     }
   };
 
@@ -234,7 +298,7 @@ export default function ExportReport() {
         />
         <KpiCard
           title="报表周期"
-          value="7天"
+          value={`${daysSpan}天`}
           icon={Calendar}
           gradientClass="bg-gradient-kpi3"
           colorClass="text-project-photoelectric"
@@ -540,7 +604,94 @@ export default function ExportReport() {
               trend30={trend30}
               storeCount={filteredStores.length}
               consultantCount={filteredStoreConsultants.length}
+              selectedStoreIds={config.stores.includes('all') ? STORES.map((s) => s.id) : config.stores}
+              dateRange={config.dateRange}
             />
+          </div>
+
+          <div className="glass-card p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <History className="w-5 h-5 text-primary-400" />
+                <div>
+                  <h3 className="text-lg font-semibold text-white">最近导出记录</h3>
+                  <p className="mt-0.5 text-xs text-white/50">
+                    点击文件名可重新下载，最多保留 30 条历史记录
+                  </p>
+                </div>
+              </div>
+              {recentHistory.length > 0 && (
+                <button
+                  onClick={handleClearHistory}
+                  disabled={clearing}
+                  className={cn(
+                    'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200',
+                    clearing
+                      ? 'bg-white/10 text-white/40 cursor-wait'
+                      : 'text-white/60 hover:text-status-error hover:bg-status-error/10'
+                  )}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>清空历史</span>
+                </button>
+              )}
+            </div>
+
+            {recentHistory.length === 0 ? (
+              <div className="py-12 flex flex-col items-center justify-center text-white/40">
+                <Inbox className="w-12 h-12 mb-3 opacity-50" />
+                <p className="text-sm">暂无导出记录</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded-lg border border-white/5">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-white/[0.02]">
+                      <th className="px-4 py-3 text-left text-xs font-medium text-white/60">文件名</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-white/60">报表类型</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-white/60">门店范围</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-white/60">日期范围</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-white/60">格式</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-white/60">生成时间</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {recentHistory.map((entry) => (
+                      <tr key={entry.id} className="hover:bg-white/[0.02] transition-colors">
+                        <td className="px-4 py-3">
+                          <button
+                            onClick={() => handleRedownload(entry)}
+                            className="text-primary-400 hover:text-primary-300 underline decoration-dotted underline-offset-2 text-left max-w-[220px] truncate block"
+                            title={entry.filename}
+                          >
+                            {entry.filename}
+                          </button>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-primary-500/10 text-primary-300 text-xs font-medium">
+                            {entry.reportTypeLabel}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-white/70">
+                          {entry.storeIds.length === 0
+                            ? '全部门店'
+                            : `${entry.storeNames.length}家门店`}
+                        </td>
+                        <td className="px-4 py-3 text-white/70 whitespace-nowrap">
+                          {entry.dateRange.start} ~ {entry.dateRange.end}
+                        </td>
+                        <td className="px-4 py-3 text-white/70">
+                          {getFormatLabel(entry.format)}
+                        </td>
+                        <td className="px-4 py-3 text-white/50 whitespace-nowrap">
+                          {formatGeneratedAt(entry.generatedAt)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       </div>

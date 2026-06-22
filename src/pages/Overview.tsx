@@ -39,7 +39,7 @@ const projectTypeDotColors: Record<ProjectType, string> = {
 
 export default function Overview() {
   const navigate = useNavigate();
-  const { currentStoreId, setCurrentStoreId } = useGlobalStore();
+  const { currentStoreId, setCurrentStoreId, setPendingAlertFilters, handledAlertIds } = useGlobalStore();
   const [detailStoreId, setDetailStoreId] = useState<string | null>(null);
   const currentStore = STORES.find((s) => s.id === currentStoreId) || STORES[0];
 
@@ -115,11 +115,18 @@ export default function Overview() {
     setDetailStoreId(storeId === detailStoreId ? null : storeId);
   };
 
-  const handleNavigate = (path: string, storeId: string) => {
+  function handleNavigate(route: string, storeId: string, opts?: { priorityOnly?: boolean }) {
     setCurrentStoreId(storeId);
+    if (route === '/alert') {
+      setPendingAlertFilters({
+        storeId,
+        priorityOnly: opts?.priorityOnly ?? false,
+        statusFilter: 'unhandled',
+      });
+    }
     setDetailStoreId(null);
-    navigate(path);
-  };
+    navigate(route);
+  }
 
   const renderDetailPanel = () => {
     if (!detailStore) return null;
@@ -152,12 +159,14 @@ export default function Overview() {
       consultantStats[c.status]++;
     });
 
-    const unhandledAlerts = storeAlerts.filter((a) => !a.isHandled);
-    const timeoutWaitAlerts = storeAlerts.filter((a) => a.type === 'timeout_wait' && !a.isHandled);
+    const unhandledAlerts = storeAlerts.filter((a) => !a.isHandled && !handledAlertIds.has(a.id));
+    const timeoutWaitAlerts = storeAlerts.filter((a) => a.type === 'timeout_wait' && !a.isHandled && !handledAlertIds.has(a.id));
     const arrivedNotConsultedAlerts = storeAlerts.filter(
-      (a) => a.type === 'arrived_not_consulted' && !a.isHandled
+      (a) => a.type === 'arrived_not_consulted' && !a.isHandled && !handledAlertIds.has(a.id)
     );
-    const priorityFollowUpAlerts = storeAlerts.filter((a) => a.isPriorityFollowUp && !a.isHandled);
+    const priorityFollowUpAlerts = storeAlerts.filter(
+      (a) => a.isPriorityFollowUp && !a.isHandled && !handledAlertIds.has(a.id)
+    );
     const sortedAlerts = [...unhandledAlerts].sort((a, b) => {
       if (a.isPriorityFollowUp && !b.isPriorityFollowUp) return -1;
       if (!a.isPriorityFollowUp && b.isPriorityFollowUp) return 1;
@@ -408,7 +417,7 @@ export default function Overview() {
             {priorityFollowUpAlerts.length > 0 && (
               <button
                 type="button"
-                onClick={() => handleNavigate('/alert', detailStore.id)}
+                onClick={() => handleNavigate('/alert', detailStore.id, { priorityOnly: true })}
                 className="w-full mb-3 inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold
                            bg-gradient-to-r from-status-critical/30 via-status-critical/20 to-status-warning/20
                            border border-status-critical/40 text-status-critical hover:from-status-critical/40

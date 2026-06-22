@@ -636,13 +636,23 @@ export function generateCancelRecords(): CancelRecord[] {
   return records
 }
 
-export function generateStoreRanking(storeIds?: string[]): StoreRanking[] {
+export function generateStoreRanking(storeIds?: string[], dateRange?: { start: string; end: string }): StoreRanking[] {
   const sourceStores = storeIds ? STORES.filter((s) => storeIds.includes(s.id)) : STORES
+  const days = dateRange
+    ? Math.max(1, Math.floor((new Date(dateRange.end).getTime() - new Date(dateRange.start).getTime()) / 86400000) + 1)
+    : 7
+  const scaleFactor = days / 7
+
   const rankings: StoreRanking[] = sourceStores.map((store, idx) => {
     const baseScore = 95 - idx * 4
-    const totalConsultations = store.todayConsultations + Math.floor(seededRandom(idx + 10) * 20)
-    const avgWaitMinutes = 15 + idx * 5 + Math.floor(seededRandom(idx + 20) * 10)
-    const cancelRate = 1.5 + idx * 0.8 + seededRandom(idx + 30) * 2
+    const baseConsultations = store.todayConsultations + Math.floor(seededRandom(idx + 10) * 20)
+    const baseWaitMinutes = 15 + idx * 5 + Math.floor(seededRandom(idx + 20) * 10)
+    const baseCancelRate = 1.5 + idx * 0.8 + seededRandom(idx + 30) * 2
+
+    const totalConsultations = Math.round(baseConsultations * scaleFactor)
+    const avgWaitMinutes = Math.round(baseWaitMinutes * scaleFactor)
+    const cancelCount = Math.round(baseCancelRate * baseConsultations * scaleFactor / 100)
+    const cancelRate = Number(((cancelCount / Math.max(1, totalConsultations)) * 100).toFixed(1))
 
     return {
       rank: 0,
@@ -650,8 +660,8 @@ export function generateStoreRanking(storeIds?: string[]): StoreRanking[] {
       storeName: store.name,
       totalConsultations,
       avgWaitMinutes,
-      cancelRate: Number(cancelRate.toFixed(1)),
-      efficiencyScore: baseScore - cancelRate * 2 - avgWaitMinutes * 0.3
+      cancelRate,
+      efficiencyScore: Number((baseScore - cancelRate * 2 - avgWaitMinutes * 0.3).toFixed(1))
     }
   })
 
@@ -661,16 +671,24 @@ export function generateStoreRanking(storeIds?: string[]): StoreRanking[] {
   return rankings
 }
 
-export function generateConsultantEfficiency(storeIds?: string[]): ConsultantEfficiency[] {
+export function generateConsultantEfficiency(storeIds?: string[], dateRange?: { start: string; end: string }): ConsultantEfficiency[] {
   const sourceConsultants = storeIds
     ? CONSULTANTS.filter((c) => storeIds.includes(c.storeId))
     : CONSULTANTS.slice(0, 20)
+  const days = dateRange
+    ? Math.max(1, Math.floor((new Date(dateRange.end).getTime() - new Date(dateRange.start).getTime()) / 86400000) + 1)
+    : 7
+  const scaleFactor = days / 7
+
   const efficiencies: ConsultantEfficiency[] = sourceConsultants.map((c, idx) => {
     const store = STORES.find((s) => s.id === c.storeId) || STORES[0]
     const baseScore = 95 - idx * 2.5
-    const servedCount = c.todayServed + Math.floor(seededRandom(idx + 50) * 4)
-    const avgConsultMinutes = 22 + (idx % 6) * 4 + Math.floor(seededRandom(idx + 60) * 6)
+    const baseServedCount = c.todayServed + Math.floor(seededRandom(idx + 50) * 4)
+    const baseAvgConsultMinutes = 22 + (idx % 6) * 4 + Math.floor(seededRandom(idx + 60) * 6)
     const satisfaction = 98 - (idx % 8) - seededRandom(idx + 70) * 3
+
+    const servedCount = Math.round(baseServedCount * scaleFactor)
+    const avgConsultMinutes = Math.round(baseAvgConsultMinutes * scaleFactor)
 
     return {
       rank: 0,
@@ -680,7 +698,7 @@ export function generateConsultantEfficiency(storeIds?: string[]): ConsultantEff
       servedCount,
       avgConsultMinutes,
       customerSatisfaction: Number(satisfaction.toFixed(1)),
-      efficiencyScore: baseScore + servedCount * 0.5 - avgConsultMinutes * 0.2 + satisfaction * 0.1
+      efficiencyScore: Number((baseScore + servedCount * 0.5 - avgConsultMinutes * 0.2 + satisfaction * 0.1).toFixed(1))
     }
   })
 
@@ -721,21 +739,37 @@ export function generateTrendData(): TrendDataPoint[] {
   return data
 }
 
-export function generateTrendSummary(days: 7 | 30, storeIds?: string[]): TrendSummary {
-  const byDay: { date: string; consultations: number; avgWait: number; cancels: number }[] = []
-  const today = new Date()
+export function generateTrendSummary(days: 7 | 30, storeIds?: string[], dateRange?: { start: string; end: string }): TrendSummary {
+  const byDay: StoreDailyTrend[] = []
   const storeMultiplier = storeIds ? Math.max(0.3, storeIds.length / STORES.length) : 1
 
-  for (let i = days - 1; i >= 0; i--) {
-    const date = new Date(today)
-    date.setDate(today.getDate() - i)
+  let actualDays: number
+  let startDate: Date
+  let endDate: Date
+
+  if (dateRange) {
+    startDate = new Date(dateRange.start)
+    endDate = new Date(dateRange.end)
+    actualDays = Math.max(1, Math.floor((endDate.getTime() - startDate.getTime()) / 86400000) + 1)
+  } else {
+    endDate = new Date()
+    startDate = new Date(endDate)
+    startDate.setDate(endDate.getDate() - days + 1)
+    actualDays = days
+  }
+
+  const normalizedDays: 7 | 30 = actualDays <= 7 ? 7 : actualDays <= 30 ? 30 : 30
+
+  for (let i = 0; i < actualDays; i++) {
+    const date = new Date(startDate)
+    date.setDate(startDate.getDate() + i)
     const dateStr = `${(date.getMonth() + 1).toString().padStart(2, '0')}/${date.getDate().toString().padStart(2, '0')}`
     const dayOfWeek = date.getDay()
     const isWeekend = dayOfWeek === 0 || dayOfWeek === 6
 
-    const seedBase = days * 1000 + i * 31
+    const seedBase = actualDays * 1000 + i * 31
     const baseConsultations = isWeekend ? 35 : 65
-    const dayFluctuation = (seededRandom(seedBase + 1) - 0.5) * (days === 30 ? 40 : 20)
+    const dayFluctuation = (seededRandom(seedBase + 1) - 0.5) * (normalizedDays === 30 ? 40 : 20)
     const consultations = Math.max(10, Math.floor((baseConsultations + dayFluctuation) * storeMultiplier))
 
     const baseWait = isWeekend ? 22 : 30
@@ -754,24 +788,23 @@ export function generateTrendSummary(days: 7 | 30, storeIds?: string[]): TrendSu
   const cancelRate = Number(((totalCancels / Math.max(1, totalConsultations)) * 100).toFixed(1))
 
   return {
-    days,
+    days: normalizedDays,
     totalConsultations,
     avgWaitMinutes,
     cancelCount: totalCancels,
-    cancelRate: Number(cancelRate),
+    cancelRate,
     peakHours: '10:00-12:00, 14:00-17:00',
     compareToPrevPeriod: {
-      consultationsDeltaPct: Number(((seededRandom(days * 99) - 0.4) * 20).toFixed(1)),
-      waitDeltaPct: Number(((seededRandom(days * 97) - 0.6) * 15).toFixed(1)),
-      cancelRateDeltaPct: Number(((seededRandom(days * 95) - 0.5) * 10).toFixed(1))
+      consultationsDeltaPct: Number(((seededRandom(actualDays * 99) - 0.4) * 20).toFixed(1)),
+      waitDeltaPct: Number(((seededRandom(actualDays * 97) - 0.6) * 15).toFixed(1)),
+      cancelRateDeltaPct: Number(((seededRandom(actualDays * 95) - 0.5) * 10).toFixed(1))
     },
     byDay
   }
 }
 
-export function generateStoreDailyTrend(storeId: string, days: 7 | 30): StoreDailyTrend[] {
+export function generateStoreDailyTrend(storeId: string, days: 7 | 30, dateRange?: { start: string; end: string }): StoreDailyTrend[] {
   const byDay: StoreDailyTrend[] = []
-  const today = new Date()
   const store = STORES.find((s) => s.id === storeId) || STORES[0]
 
   let cityMultiplier: number
@@ -783,16 +816,33 @@ export function generateStoreDailyTrend(storeId: string, days: 7 | 30): StoreDai
     cityMultiplier = 1.0
   }
 
-  for (let i = days - 1; i >= 0; i--) {
-    const date = new Date(today)
-    date.setDate(today.getDate() - i)
+  let actualDays: number
+  let startDate: Date
+  let endDate: Date
+
+  if (dateRange) {
+    startDate = new Date(dateRange.start)
+    endDate = new Date(dateRange.end)
+    actualDays = Math.max(1, Math.floor((endDate.getTime() - startDate.getTime()) / 86400000) + 1)
+  } else {
+    endDate = new Date()
+    startDate = new Date(endDate)
+    startDate.setDate(endDate.getDate() - days + 1)
+    actualDays = days
+  }
+
+  const normalizedDays: 7 | 30 = actualDays <= 7 ? 7 : actualDays <= 30 ? 30 : 30
+
+  for (let i = 0; i < actualDays; i++) {
+    const date = new Date(startDate)
+    date.setDate(startDate.getDate() + i)
     const dateStr = `${(date.getMonth() + 1).toString().padStart(2, '0')}/${date.getDate().toString().padStart(2, '0')}`
     const dayOfWeek = date.getDay()
     const isWeekend = dayOfWeek === 0 || dayOfWeek === 6
 
-    const seedBase = store.id.charCodeAt(6) * 100 + days * 10 + i * 37
+    const seedBase = store.id.charCodeAt(6) * 100 + normalizedDays * 10 + i * 37
     const baseConsultations = isWeekend ? 28 : 58
-    const dayFluctuation = (seededRandom(seedBase + 1) - 0.5) * (days === 30 ? 30 : 16)
+    const dayFluctuation = (seededRandom(seedBase + 1) - 0.5) * (normalizedDays === 30 ? 30 : 16)
     const consultations = Math.max(6, Math.floor((baseConsultations + dayFluctuation) * cityMultiplier))
 
     const baseWait = isWeekend ? 20 : (store.city === '上海' || store.city === '北京' ? 34 : 26)

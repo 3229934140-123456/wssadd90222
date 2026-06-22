@@ -13,7 +13,7 @@ import {
 import AlertItem from '../components/alert/AlertItem';
 import AlertDetailPanel from '../components/alert/AlertDetailPanel';
 import KpiCard from '../components/common/KpiCard';
-import { generateAlerts } from '../data/mockData';
+import { generateAlerts, STORES } from '../data/mockData';
 import { useGlobalStore } from '../store';
 import { cn } from '../utils';
 import type { Alert, AlertType, AlertSeverity, HandleAction } from '../types';
@@ -59,12 +59,16 @@ function persistedToAlert(p: PersistedHandledAlert): Alert {
     handleNote: p.handleNote,
     handleAction: p.handleAction,
     suggestion: p.suggestion,
+    originalSeverity: p.originalSeverity,
+    triggeredWaitMinutes: p.triggeredWaitMinutes,
+    wasPriorityFollowUp: p.wasPriorityFollowUp,
   };
 }
 
 export default function AlertCenter() {
   const {
     currentStoreId,
+    setCurrentStoreId,
     selectedAlertId,
     setSelectedAlertId,
     alertFilter,
@@ -72,6 +76,10 @@ export default function AlertCenter() {
     unhandledAlertsCount,
     setUnhandledAlertsCount,
     handledAlerts,
+    pendingAlertFilters,
+    clearPendingAlertFilters,
+    markAlertHandled,
+    handledAlertIds,
   } = useGlobalStore();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -84,13 +92,27 @@ export default function AlertCenter() {
   const [handleActionFilter, setHandleActionFilter] = useState<'all' | HandleAction>('all');
   const [dateStart, setDateStart] = useState<string>('');
   const [dateEnd, setDateEnd] = useState<string>('');
+  const [recordStoreFilter, setRecordStoreFilter] = useState<string>('all');
+  const [recordTypeFilter, setRecordTypeFilter] = useState<AlertType | 'all'>('all');
+  const [recordPriorityFilter, setRecordPriorityFilter] = useState<'all' | 'yes' | 'no'>('all');
 
   useEffect(() => {
     const generated = generateAlerts(currentStoreId);
     setAlerts(generated);
-    const count = generated.filter((a) => !a.isHandled).length;
+    const count = generated.filter((a) => !a.isHandled && !handledAlertIds.has(a.id)).length;
     setUnhandledAlertsCount(count);
-  }, [currentStoreId, setUnhandledAlertsCount]);
+  }, [currentStoreId, setUnhandledAlertsCount, handledAlertIds]);
+
+  useEffect(() => {
+    const f = pendingAlertFilters;
+    if (f) {
+      if (f.storeId && f.storeId !== currentStoreId) setCurrentStoreId(f.storeId);
+      if (typeof f.priorityOnly === 'boolean') setPriorityOnly(f.priorityOnly);
+      if (f.alertFilter) setAlertFilter(f.alertFilter);
+      if (f.statusFilter) setStatusFilter(f.statusFilter);
+      clearPendingAlertFilters();
+    }
+  }, [pendingAlertFilters]);
 
   const handledByOptions = useMemo(() => {
     const set = new Set<string>();
@@ -108,11 +130,21 @@ export default function AlertCenter() {
   const filteredAlerts = useMemo(() => {
     return sourceList.filter((alert) => {
       if (viewMode !== 'record') {
-        if (statusFilter === 'unhandled' && alert.isHandled) return false;
-        if (statusFilter === 'handled' && !alert.isHandled) return false;
+        const isActuallyHandled = alert.isHandled || handledAlertIds.has(alert.id);
+        if (statusFilter === 'unhandled' && isActuallyHandled) return false;
+        if (statusFilter === 'handled' && !isActuallyHandled) return false;
       }
       if (priorityOnly && !alert.isPriorityFollowUp) return false;
-      if (alertFilter !== 'all' && alert.type !== alertFilter) return false;
+
+      if (viewMode === 'record') {
+        if (recordTypeFilter !== 'all' && alert.type !== recordTypeFilter) return false;
+        if (recordStoreFilter !== 'all' && alert.storeId !== recordStoreFilter) return false;
+        if (recordPriorityFilter === 'yes' && !alert.wasPriorityFollowUp) return false;
+        if (recordPriorityFilter === 'no' && alert.wasPriorityFollowUp) return false;
+      } else {
+        if (alertFilter !== 'all' && alert.type !== alertFilter) return false;
+      }
+
       if (severityFilter !== 'all' && alert.severity !== severityFilter) return false;
 
       if (viewMode === 'record') {
@@ -143,7 +175,7 @@ export default function AlertCenter() {
       }
       return true;
     });
-  }, [sourceList, viewMode, alertFilter, severityFilter, statusFilter, searchQuery, handledByFilter, handleActionFilter, dateStart, dateEnd, priorityOnly]);
+  }, [sourceList, viewMode, alertFilter, recordTypeFilter, recordStoreFilter, recordPriorityFilter, severityFilter, statusFilter, searchQuery, handledByFilter, handleActionFilter, dateStart, dateEnd, priorityOnly, handledAlertIds]);
 
   const selectedAlert = useMemo(() => {
     return sourceList.find((a) => a.id === selectedAlertId) || null;
@@ -157,21 +189,22 @@ export default function AlertCenter() {
         critical: handledAlerts.filter((a) => a.severity === 'critical').length,
         timeout: handledAlerts.filter((a) => a.alertType === 'timeout_wait').length,
         arrived: handledAlerts.filter((a) => a.alertType === 'arrived_not_consulted').length,
-        priorityFollowUp: 0,
+        priorityFollowUp: handledAlerts.filter((a) => a.wasPriorityFollowUp).length,
       };
     }
     return {
       total: alerts.length,
-      unhandled: alerts.filter((a) => !a.isHandled).length,
-      critical: alerts.filter((a) => a.severity === 'critical' && !a.isHandled).length,
-      timeout: alerts.filter((a) => a.type === 'timeout_wait' && !a.isHandled).length,
-      arrived: alerts.filter((a) => a.type === 'arrived_not_consulted' && !a.isHandled).length,
-      priorityFollowUp: alerts.filter((a) => a.isPriorityFollowUp && !a.isHandled).length,
+      unhandled: alerts.filter((a) => !a.isHandled && !handledAlertIds.has(a.id)).length,
+      critical: alerts.filter((a) => a.severity === 'critical' && !a.isHandled && !handledAlertIds.has(a.id)).length,
+      timeout: alerts.filter((a) => a.type === 'timeout_wait' && !a.isHandled && !handledAlertIds.has(a.id)).length,
+      arrived: alerts.filter((a) => a.type === 'arrived_not_consulted' && !a.isHandled && !handledAlertIds.has(a.id)).length,
+      priorityFollowUp: alerts.filter((a) => a.isPriorityFollowUp && !a.isHandled && !handledAlertIds.has(a.id)).length,
     };
-  }, [viewMode, alerts, handledAlerts]);
+  }, [viewMode, alerts, handledAlerts, handledAlertIds]);
 
   const handleAlert = (action: HandleAction, note: string) => {
     if (!selectedAlert) return;
+    markAlertHandled(selectedAlert.id);
     setAlerts((prev) =>
       prev.map((a) =>
         a.id === selectedAlert.id
@@ -379,99 +412,147 @@ export default function AlertCenter() {
         </div>
 
         {viewMode === 'record' && (
-          <div className="flex flex-wrap items-center gap-3 mt-4 pt-4 border-t border-white/5">
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-white/45">处理人:</span>
-              <select
-                value={handledByFilter}
-                onChange={(e) => setHandledByFilter(e.target.value)}
-                className="input-field !py-1.5 !px-2 text-xs w-auto min-w-[120px]"
-              >
-                <option value="all">全部</option>
-                {handledByOptions.map((name) => (
-                  <option key={name} value={name}>{name}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-white/45">处理动作:</span>
-              <select
-                value={handleActionFilter}
-                onChange={(e) => setHandleActionFilter(e.target.value as 'all' | HandleAction)}
-                className="input-field !py-1.5 !px-2 text-xs w-auto min-w-[150px]"
-              >
-                <option value="all">全部</option>
-                {(Object.keys(handleActionLabels) as HandleAction[]).map((a) => (
-                  <option key={a} value={a}>{handleActionLabels[a]}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <CalendarDays className="w-3.5 h-3.5 text-white/40" />
-              <input
-                type="date"
-                value={dateStart}
-                onChange={(e) => setDateStart(e.target.value)}
-                className="input-field !py-1.5 !px-2 text-xs w-auto"
-              />
-              <span className="text-xs text-white/30">至</span>
-              <input
-                type="date"
-                value={dateEnd}
-                onChange={(e) => setDateEnd(e.target.value)}
-                className="input-field !py-1.5 !px-2 text-xs w-auto"
-              />
-            </div>
-
-            <div className="flex items-center gap-1.5 ml-2">
-              {(['today', '7d', '30d'] as const).map((p) => (
-                <button
-                  key={p}
-                  onClick={() => {
-                    const now = new Date();
-                    const fmt = (d: Date) => d.toISOString().slice(0, 10);
-                    if (p === 'today') {
-                      setDateStart(fmt(now));
-                      setDateEnd(fmt(now));
-                    } else if (p === '7d') {
-                      const s = new Date();
-                      s.setDate(s.getDate() - 6);
-                      setDateStart(fmt(s));
-                      setDateEnd(fmt(now));
-                    } else {
-                      const s = new Date();
-                      s.setDate(s.getDate() - 29);
-                      setDateStart(fmt(s));
-                      setDateEnd(fmt(now));
-                    }
-                  }}
-                  className={cn(
-                    'px-2.5 py-1 text-xs rounded-md border transition-all',
-                    'border-white/10 text-white/55 hover:text-white/80 hover:border-white/20 hover:bg-white/5'
-                  )}
+          <>
+            <div className="flex flex-wrap items-center gap-3 mt-4 pt-4 border-t border-white/5">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-white/45">门店:</span>
+                <select
+                  value={recordStoreFilter}
+                  onChange={(e) => setRecordStoreFilter(e.target.value)}
+                  className="input-field !py-1.5 !px-2 text-xs w-auto min-w-[180px]"
                 >
-                  {p === 'today' ? '今日' : p === '7d' ? '近7天' : '近30天'}
-                </button>
-              ))}
+                  <option value="all">全部门店</option>
+                  {STORES.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-white/45">预警类型:</span>
+                <select
+                  value={recordTypeFilter}
+                  onChange={(e) => setRecordTypeFilter(e.target.value as AlertType | 'all')}
+                  className="input-field !py-1.5 !px-2 text-xs w-auto min-w-[140px]"
+                >
+                  <option value="all">全部类型</option>
+                  {(Object.keys(typeConfig) as AlertType[]).map((t) => (
+                    <option key={t} value={t}>{typeConfig[t].label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-white/45">重点跟进:</span>
+                <select
+                  value={recordPriorityFilter}
+                  onChange={(e) => setRecordPriorityFilter(e.target.value as 'all' | 'yes' | 'no')}
+                  className="input-field !py-1.5 !px-2 text-xs w-auto min-w-[100px]"
+                >
+                  <option value="all">全部</option>
+                  <option value="yes">是</option>
+                  <option value="no">否</option>
+                </select>
+              </div>
             </div>
 
-            {(dateStart || dateEnd || handledByFilter !== 'all' || handleActionFilter !== 'all') && (
-              <button
-                onClick={() => {
-                  setHandledByFilter('all');
-                  setHandleActionFilter('all');
-                  setDateStart('');
-                  setDateEnd('');
-                }}
-                className="ml-auto text-xs text-white/45 hover:text-white/75 transition-colors inline-flex items-center gap-1"
-              >
-                <X className="w-3 h-3" />
-                清除筛选
-              </button>
-            )}
-          </div>
+            <div className="flex flex-wrap items-center gap-3 mt-4 pt-4 border-t border-white/5">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-white/45">处理人:</span>
+                <select
+                  value={handledByFilter}
+                  onChange={(e) => setHandledByFilter(e.target.value)}
+                  className="input-field !py-1.5 !px-2 text-xs w-auto min-w-[120px]"
+                >
+                  <option value="all">全部</option>
+                  {handledByOptions.map((name) => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-white/45">处理动作:</span>
+                <select
+                  value={handleActionFilter}
+                  onChange={(e) => setHandleActionFilter(e.target.value as 'all' | HandleAction)}
+                  className="input-field !py-1.5 !px-2 text-xs w-auto min-w-[150px]"
+                >
+                  <option value="all">全部</option>
+                  {(Object.keys(handleActionLabels) as HandleAction[]).map((a) => (
+                    <option key={a} value={a}>{handleActionLabels[a]}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <CalendarDays className="w-3.5 h-3.5 text-white/40" />
+                <input
+                  type="date"
+                  value={dateStart}
+                  onChange={(e) => setDateStart(e.target.value)}
+                  className="input-field !py-1.5 !px-2 text-xs w-auto"
+                />
+                <span className="text-xs text-white/30">至</span>
+                <input
+                  type="date"
+                  value={dateEnd}
+                  onChange={(e) => setDateEnd(e.target.value)}
+                  className="input-field !py-1.5 !px-2 text-xs w-auto"
+                />
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                {(['today', '7d', '30d'] as const).map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => {
+                      const now = new Date();
+                      const fmt = (d: Date) => d.toISOString().slice(0, 10);
+                      if (p === 'today') {
+                        setDateStart(fmt(now));
+                        setDateEnd(fmt(now));
+                      } else if (p === '7d') {
+                        const s = new Date();
+                        s.setDate(s.getDate() - 6);
+                        setDateStart(fmt(s));
+                        setDateEnd(fmt(now));
+                      } else {
+                        const s = new Date();
+                        s.setDate(s.getDate() - 29);
+                        setDateStart(fmt(s));
+                        setDateEnd(fmt(now));
+                      }
+                    }}
+                    className={cn(
+                      'px-2.5 py-1 text-xs rounded-md border transition-all',
+                      'border-white/10 text-white/55 hover:text-white/80 hover:border-white/20 hover:bg-white/5'
+                    )}
+                  >
+                    {p === 'today' ? '今日' : p === '7d' ? '近7天' : '近30天'}
+                  </button>
+                ))}
+              </div>
+
+              {(recordStoreFilter !== 'all' || recordTypeFilter !== 'all' || recordPriorityFilter !== 'all' || dateStart || dateEnd || handledByFilter !== 'all' || handleActionFilter !== 'all') && (
+                <button
+                  onClick={() => {
+                    setRecordStoreFilter('all');
+                    setRecordTypeFilter('all');
+                    setRecordPriorityFilter('all');
+                    setHandledByFilter('all');
+                    setHandleActionFilter('all');
+                    setDateStart('');
+                    setDateEnd('');
+                  }}
+                  className="ml-auto text-xs text-white/45 hover:text-white/75 transition-colors inline-flex items-center gap-1"
+                >
+                  <X className="w-3 h-3" />
+                  清除筛选
+                </button>
+              )}
+            </div>
+          </>
         )}
       </div>
 

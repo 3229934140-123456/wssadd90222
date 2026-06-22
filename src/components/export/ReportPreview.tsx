@@ -41,6 +41,7 @@ interface ReportPreviewProps {
   storeCount?: number;
   consultantCount?: number;
   selectedStoreIds?: string[];
+  dateRange?: { start: string; end: string };
   onRequestStoreComparison?: (storeIds: string[]) => void;
 }
 
@@ -383,10 +384,15 @@ interface StoreComparisonMetrics {
   minDailyConsultations: number;
 }
 
-function StoreComparisonSection({ storeIds }: { storeIds: string[] }) {
+function StoreComparisonSection({ storeIds, dateRange }: { storeIds: string[]; dateRange?: { start: string; end: string } }) {
+  const days = dateRange
+    ? Math.max(1, Math.floor((new Date(dateRange.end).getTime() - new Date(dateRange.start).getTime()) / 86400000) + 1)
+    : 7
+  const normalizedDays: 7 | 30 = days <= 7 ? 7 : days <= 30 ? 30 : 30
+
   const storeTrendsMap = storeIds.map((sid) => ({
     store: STORES.find((s) => s.id === sid)!,
-    trends: generateStoreDailyTrend(sid, 7),
+    trends: generateStoreDailyTrend(sid, normalizedDays, dateRange),
   }));
 
   const allDates = storeTrendsMap[0]?.trends.map((t) => t.date) ?? [];
@@ -437,7 +443,7 @@ function StoreComparisonSection({ storeIds }: { storeIds: string[] }) {
       <header className="px-5 py-4 border-b border-white/10 bg-gradient-to-r from-primary-500/15 to-primary-500/5">
         <h4 className="text-sm font-bold text-white/95 flex items-center gap-2">
           <BarChart3 className="w-4 h-4 text-primary-400" />
-          选中门店对比（近7天）
+          选中门店对比（{days}天）
         </h4>
       </header>
       <div className="p-5 space-y-5">
@@ -534,7 +540,7 @@ function StoreComparisonSection({ storeIds }: { storeIds: string[] }) {
   );
 }
 
-export default function ReportPreview({ type, data, trend7, trend30, storeCount, consultantCount, selectedStoreIds }: ReportPreviewProps) {
+export default function ReportPreview({ type, data, trend7, trend30, storeCount, consultantCount, selectedStoreIds, dateRange }: ReportPreviewProps) {
   const [expandedDays, setExpandedDays] = React.useState<7 | 30 | null>(null);
 
   const toggleExpanded = (days: 7 | 30) => {
@@ -851,7 +857,7 @@ export default function ReportPreview({ type, data, trend7, trend30, storeCount,
             </div>
 
             {selectedStoreIds && selectedStoreIds.length >= 2 && selectedStoreIds.length <= 4 && (
-              <StoreComparisonSection storeIds={selectedStoreIds} />
+              <StoreComparisonSection storeIds={selectedStoreIds} dateRange={dateRange} />
             )}
 
             <div>

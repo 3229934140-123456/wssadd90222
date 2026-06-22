@@ -1,8 +1,8 @@
-import type { StoreRanking, ConsultantEfficiency, TrendSummary } from '../types';
+import type { StoreRanking, ConsultantEfficiency, TrendSummary, ExportHistoryEntry } from '../types';
 
 export interface ExportPayload {
   reportType: 'store' | 'consultant' | 'comprehensive';
-  format: 'xlsx' | 'csv';
+  format: 'xlsx' | 'csv' | 'pdf';
   storeIds: string[];
   storeNames: string[];
   dateRange: { start: string; end: string };
@@ -118,6 +118,13 @@ function generateFilename(payload: ExportPayload): string {
   return `${label}_${start}_${end}_${timestamp}.${ext}`;
 }
 
+function generateUuid(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID();
+  }
+  return `export_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
 function buildStoreReportData(payload: ExportPayload): { headers: string[]; rows: (string | number)[][] } {
   const headers = ['排名', '门店名称', '接诊总数', '平均等待(分钟)', '取消率(%)', '效率指数'];
   const rows: (string | number)[][] = [];
@@ -213,12 +220,13 @@ function buildComprehensiveSheets(payload: ExportPayload): { name: string; heade
   return sheets;
 }
 
-export async function exportReport(payload: ExportPayload): Promise<void> {
-  const filename = generateFilename(payload);
+function performExport(payload: ExportPayload, customFilename?: string): string {
+  const filename = customFilename || generateFilename(payload);
+  const effectiveFormat = payload.format === 'pdf' ? 'xlsx' : payload.format;
 
   if (payload.reportType === 'store') {
     const { headers, rows } = buildStoreReportData(payload);
-    if (payload.format === 'csv') {
+    if (effectiveFormat === 'csv') {
       const content = toCSV(rows, headers);
       triggerDownload(content, filename, 'text/csv;charset=utf-8');
     } else {
@@ -227,7 +235,7 @@ export async function exportReport(payload: ExportPayload): Promise<void> {
     }
   } else if (payload.reportType === 'consultant') {
     const { headers, rows } = buildConsultantReportData(payload);
-    if (payload.format === 'csv') {
+    if (effectiveFormat === 'csv') {
       const content = toCSV(rows, headers);
       triggerDownload(content, filename, 'text/csv;charset=utf-8');
     } else {
@@ -236,7 +244,7 @@ export async function exportReport(payload: ExportPayload): Promise<void> {
     }
   } else if (payload.reportType === 'comprehensive') {
     const sheets = buildComprehensiveSheets(payload);
-    if (payload.format === 'csv') {
+    if (effectiveFormat === 'csv') {
       const firstSheet = sheets[0];
       const content = toCSV(firstSheet.rows, firstSheet.headers);
       triggerDownload(content, filename, 'text/csv;charset=utf-8');
@@ -245,4 +253,47 @@ export async function exportReport(payload: ExportPayload): Promise<void> {
       triggerDownload(content, filename, 'application/vnd.ms-excel');
     }
   }
+
+  return filename;
+}
+
+export async function exportReport(payload: ExportPayload): Promise<ExportHistoryEntry> {
+  const filename = performExport(payload);
+
+  const entry: ExportHistoryEntry = {
+    id: generateUuid(),
+    reportType: payload.reportType,
+    reportTypeLabel: getReportTypeLabel(payload.reportType),
+    format: payload.format,
+    storeIds: payload.storeIds,
+    storeNames: payload.storeNames,
+    dateRange: { ...payload.dateRange },
+    generatedAt: payload.generatedAt,
+    filename,
+    snapshot: {
+      storeRanking: payload.storeRanking,
+      consultantEfficiency: payload.consultantEfficiency,
+      trend7: payload.trend7,
+      trend30: payload.trend30,
+    },
+  };
+
+  return entry;
+}
+
+export async function redownloadExport(entry: ExportHistoryEntry): Promise<void> {
+  const payload: ExportPayload = {
+    reportType: entry.reportType,
+    format: entry.format,
+    storeIds: entry.storeIds,
+    storeNames: entry.storeNames,
+    dateRange: { ...entry.dateRange },
+    generatedAt: entry.generatedAt,
+    storeRanking: entry.snapshot.storeRanking,
+    consultantEfficiency: entry.snapshot.consultantEfficiency,
+    trend7: entry.snapshot.trend7,
+    trend30: entry.snapshot.trend30,
+  };
+
+  performExport(payload, entry.filename);
 }

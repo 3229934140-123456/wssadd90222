@@ -83,6 +83,9 @@ export interface Alert {
   isPriorityFollowUp?: boolean;
   escalationLevel?: 1 | 2 | 3;
   escalationReason?: string;
+  originalSeverity?: AlertSeverity;
+  triggeredWaitMinutes?: number;
+  wasPriorityFollowUp?: boolean;
 }
 
 export interface WaitingAnalysis {
@@ -158,3 +161,21 @@ export interface TrendSummary {
 }
 
 export type HandleAction = 'arrange_consultant' | 'apologize_customer' | 'adjust_schedule' | 'open_room' | 'reassign' | 'other';
+
+export interface ExportHistoryEntry {
+  id: string;
+  reportType: 'store' | 'consultant' | 'comprehensive';
+  reportTypeLabel: string;
+  format: 'xlsx' | 'csv' | 'pdf';
+  storeIds: string[];
+  storeNames: string[];
+  dateRange: { start: string; end: string };
+  generatedAt: string;
+  filename: string;
+  snapshot: {
+    storeRanking?: StoreRanking[];
+    consultantEfficiency?: ConsultantEfficiency[];
+    trend7?: TrendSummary;
+    trend30?: TrendSummary;
+  };
+}

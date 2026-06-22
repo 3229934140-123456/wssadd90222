@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   X,
   Sparkles,
@@ -15,8 +15,41 @@ import {
 } from 'lucide-react';
 import { cn, formatDateTime } from '../../utils';
 import { useGlobalStore } from '../../store';
-import type { Alert, AlertType, HandleAction } from '../../types';
+import { STORES } from '../../data/mockData';
+import type { Alert, AlertType, HandleAction, AlertSeverity } from '../../types';
 import type { PersistedHandledAlert } from '../../utils/storage';
+
+const severityLabelMap: Record<AlertSeverity, string> = {
+  critical: '紧急',
+  high: '高',
+  medium: '中',
+  low: '低',
+};
+
+function parseWaitMinutes(message: string, alertType: AlertType): number | undefined {
+  if (alertType === 'timeout_wait') {
+    const m = message.match(/已等待(\d+)分钟/);
+    if (m) return parseInt(m[1], 10);
+  }
+  if (alertType === 'arrived_not_consulted') {
+    const m = message.match(/超过(\d+)分钟/);
+    if (m) return parseInt(m[1], 10);
+  }
+  return undefined;
+}
+
+function humanizeDuration(ms: number): string {
+  const totalMinutes = Math.max(0, Math.floor(ms / 60000));
+  if (totalMinutes < 60) {
+    return `${totalMinutes}分钟`;
+  }
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (minutes === 0) {
+    return `${hours}小时`;
+  }
+  return `${hours}小时${minutes}分`;
+}
 
 interface AlertDetailPanelProps {
   alert: Alert | null;
@@ -149,6 +182,29 @@ export default function AlertDetailPanel({ alert, onClose, onHandle }: AlertDeta
 
   const initialAction: HandleAction | '' = alert.isPriorityFollowUp ? recommendedAction : '';
 
+  const closedLoopReview = useMemo(() => {
+    if (!alert.isHandled || !alert.handledAt) return null;
+
+    const triggeredMs = new Date(alert.triggeredAt).getTime();
+    const handledMs = new Date(alert.handledAt).getTime();
+    const durationMs = handledMs - triggeredMs;
+    const durationMinutes = durationMs / 60000;
+
+    const store = STORES.find((s) => s.id === alert.storeId);
+    const threshold = store?.waitThresholdMin;
+
+    let isOnTime: boolean | undefined = undefined;
+    if (threshold !== undefined && (alert.type === 'timeout_wait' || alert.type === 'arrived_not_consulted')) {
+      isOnTime = durationMinutes <= threshold;
+    }
+
+    return {
+      durationHumanized: humanizeDuration(durationMs),
+      isOnTime,
+      threshold,
+    };
+  }, [alert]);
+
   useEffect(() => {
     if (alert && !alert.isHandled) {
       setAction(initialAction);
@@ -181,6 +237,9 @@ export default function AlertDetailPanel({ alert, onClose, onHandle }: AlertDeta
         handledBy,
         handleAction: action,
         handleNote: trimmedNote,
+        originalSeverity: alert.severity,
+        wasPriorityFollowUp: !!alert.isPriorityFollowUp,
+        triggeredWaitMinutes: parseWaitMinutes(alert.message, alert.type),
       };
       addHandledAlert(persisted);
 
@@ -390,6 +449,106 @@ export default function AlertDetailPanel({ alert, onClose, onHandle }: AlertDeta
                 </div>
               </div>
             </section>
+
+            {alert.isHandled && closedLoopReview && (
+              <section>
+                <h4 className="text-xs font-semibold text-white/50 uppercase tracking-wider mb-3">
+                  处理闭环复盘
+                </h4>
+                <div className="rounded-2xl overflow-hidden border border-status-success/20 bg-gradient-to-br from-status-success/10 via-status-success/5 to-transparent">
+                  <div className="p-4 space-y-3.5">
+                    <div>
+                      <p className="text-[11px] text-white/45 mb-1.5">处理前状态</p>
+                      <div className="space-y-1.5">
+                        {alert.originalSeverity && (
+                          <div className="flex items-center gap-2 text-sm">
+                            <span className="text-white/55 w-24 flex-shrink-0">预警严重度:</span>
+                            <span
+                              className={cn(
+                                'badge border',
+                                severityConfig[alert.originalSeverity].badgeBg,
+                                severityConfig[alert.originalSeverity].badgeText
+                              )}
+                            >
+                              {severityLabelMap[alert.originalSeverity]}
+                            </span>
+                            {alert.originalSeverity !== alert.severity && (
+                              <span className="text-white/40 text-xs">
+                                → 当前:
+                                <span
+                                  className={cn(
+                                    'ml-1 badge border',
+                                    severity.badgeBg,
+                                    severity.badgeText
+                                  )}
+                                >
+                                  {severity.label}
+                                </span>
+                              </span>
+                            )}
+                          </div>
+                        )}
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="text-white/55 w-24 flex-shrink-0">重点跟进:</span>
+                          {alert.wasPriorityFollowUp ? (
+                            <span className="text-status-critical font-medium">🔥 是</span>
+                          ) : (
+                            <span className="text-white/60">否</span>
+                          )}
+                        </div>
+                        {alert.triggeredWaitMinutes !== undefined && (
+                          <div className="flex items-center gap-2 text-sm">
+                            <span className="text-white/55 w-24 flex-shrink-0">触发时等待:</span>
+                            <span className="text-white/80">{alert.triggeredWaitMinutes} 分钟</span>
+                            {closedLoopReview.threshold && (
+                              <span className="text-white/40 text-xs">
+                                (门店标准 {closedLoopReview.threshold} 分钟)
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="h-px bg-white/10" />
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <p className="text-[11px] text-white/45 mb-1.5">处理后状态</p>
+                        <div className="flex items-center gap-1.5">
+                          <CheckCircle2 className="w-4 h-4 text-status-success" />
+                          <span className="text-sm font-medium text-status-success">已处理</span>
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-[11px] text-white/45 mb-1.5">处理时长</p>
+                        <p className="text-sm font-medium text-white/90">
+                          {closedLoopReview.durationHumanized}
+                        </p>
+                      </div>
+                    </div>
+
+                    {closedLoopReview.isOnTime !== undefined && (
+                      <>
+                        <div className="h-px bg-white/10" />
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] text-white/45">闭环时效:</span>
+                          {closedLoopReview.isOnTime ? (
+                            <span className="inline-flex items-center gap-1 text-sm font-medium text-status-success">
+                              ✅ 按时闭环
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-sm font-medium text-status-warning">
+                              ⚠ 处理超时
+                            </span>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </section>
+            )}
 
             <section>
               <div className="rounded-2xl overflow-hidden border border-primary-500/20 bg-gradient-to-br from-primary-500/15 via-primary-500/5 to-transparent">
